@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import io
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import List
 from zipfile import ZipFile
 
 import requests
+import soundfile as sf
 from datasets import (
     Audio,
     BuilderConfig,
@@ -17,8 +19,6 @@ from datasets import (
     SplitGenerator,
     Value,
 )
-import soundfile as sf
-import io
 from natsort import natsorted
 from tqdm import tqdm
 
