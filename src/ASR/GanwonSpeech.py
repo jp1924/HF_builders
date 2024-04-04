@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import io
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import List
 from zipfile import ZipFile
 
 import requests
+import soundfile as sf
 from datasets import (
     Audio,
     BuilderConfig,
@@ -47,6 +49,7 @@ _DATANAME = "GanwonSpeech"
 class GanwonSpeech(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
         BuilderConfig(name="STT", version=_VERSION, description="STT 학습에 맞춰서 최적화된 데이터"),
+        # VAD에 사용할 수 있지 않을까 해서 이렇게 남겨 둠.
         BuilderConfig(name="Original", version=_VERSION, description="순수 raw 데이터"),
     ]
 
@@ -56,39 +59,104 @@ class GanwonSpeech(GeneratorBasedBuilder):
         if self.config.name == "STT":
             features = Features(
                 {
+                    "id": Value("string"),
                     "audio": Audio(16000),
                     "sentence": Value("string"),
-                    "standard_sentence": Value("string"),
-                    "dialect_sentence": Value("string"),
-                    "id": Value("string"),
+                    "standard_form": Value("string"),
+                    "dialect_form": Value("string"),
+                    "start": Value("float16"),
+                    "end": Value("float16"),
+                    "note": Value("string"),
+                    "eojeolList": [
+                        {
+                            "id": Value("int8"),
+                            "eojeol": Value("string"),
+                            "standard": Value("string"),
+                            "isDialect": Value("bool"),
+                        }
+                    ],
+                    "speaker": {
+                        "id": Value("string"),
+                        "name": Value("string"),
+                        "age": Value("string"),
+                        "occupation": Value("string"),
+                        "sex": Value("string"),
+                        "birthplace": Value("string"),
+                        "principal_residence": Value("string"),
+                        "current_residence": Value("string"),
+                        "education": Value("string"),
+                    },
                     "metadata": {
-                        "version": Value("string"),
-                        "date": Value("date32"),
-                        "typeInfo": {
-                            "category": Value("string"),
-                            "subcategory": Value("string"),
-                            "place": Value("string"),
-                            "speakers": [
-                                {
-                                    "id": Value("string"),
-                                    "gender": Value("string"),
-                                    "type": Value("string"),
-                                    "age": Value("string"),
-                                    "residence": Value("string"),
-                                }
-                            ],
-                            "inputType": Value("string"),
-                        },
-                        "dialogs": [
-                            {
-                                "speaker": Value("string"),
-                                "audioPath": Value("string"),
-                                "textPath": Value("string"),
-                            }
-                        ],
+                        "title": Value("string"),
+                        "creator": Value("string"),
+                        "distributor": Value("string"),
+                        "year": Value("string"),
+                        "category": Value("string"),
+                        "annotation_level": [Value("string")],
+                        "sampling": Value("string"),
+                        "author": Value("string"),
+                        "publisher": Value("string"),
+                        "date": Value("string"),
+                        "topic": Value("string"),
                     },
                 }
             )
+        elif self.config.name == "Original":
+            features = Features(
+                {
+                    "audio": Audio(16000),
+                    "id": Value("string"),
+                    "metadata": {
+                        "title": Value("string"),
+                        "creator": Value("string"),
+                        "distributor": Value("string"),
+                        "year": Value("string"),
+                        "category": Value("string"),
+                        "annotation_level": [Value("string")],
+                        "sampling": Value("string"),
+                        "author": Value("string"),
+                        "publisher": Value("string"),
+                        "date": Value("string"),
+                        "topic": Value("string"),
+                    },
+                    "speaker": [
+                        {
+                            "id": Value("string"),
+                            "name": Value("string"),
+                            "age": Value("string"),
+                            "occupation": Value("string"),
+                            "sex": Value("string"),
+                            "birthplace": Value("string"),
+                            "principal_residence": Value("string"),
+                            "current_residence": Value("string"),
+                            "education": Value("string"),
+                        }
+                    ],
+                    "setting": {"relation": Value("string")},
+                    "utterance": [
+                        {
+                            "id": Value("string"),
+                            "form": Value("string"),
+                            "standard_form": Value("string"),
+                            "dialect_form": Value("string"),
+                            "start": Value("float16"),
+                            "end": Value("float16"),
+                            "note": Value("string"),
+                            "eojeolList": [
+                                {
+                                    "id": Value("int8"),
+                                    "eojeol": Value("string"),
+                                    "standard": Value("string"),
+                                    "isDialect": Value("bool"),
+                                }
+                            ],
+                        }
+                    ],
+                }
+            )
+        else:
+            raise NotImplementedError()
+
         return DatasetInfo(
             description=_DESCRIPTION,
             features=features,
@@ -185,48 +253,92 @@ class GanwonSpeech(GeneratorBasedBuilder):
             ),
         ]
 
-    def _generate_examples(self, filepath: List[Path], split: str):
+    def _original_generate_examples(self, filepath: List[Path], split: str):
         source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x)]
         label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
 
         source_ls = natsorted(source_ls, key=lambda x: x.filename)
         label_ls = natsorted(label_ls, key=lambda x: x.filename)
 
-        idx = 0
-        for source_zip, label_zip in zip(source_ls, label_ls):
-            source_zip_file_info = [x for x in source_zip.filelist if not x.is_dir()]
-            label_zip_file_info = [x for x in label_zip.filelist if not x.is_dir()]
+        info_replacer = lambda info, key: info.filename.replace(key, "")
 
-            label_dict = dict()
-            for label_info in label_zip_file_info:
-                _id = label_info.filename.split("/")[-2]
-                if _id not in label_dict:
-                    label_dict[_id] = list()
-                label_dict[_id].append(label_info)
+        label_zip = label_ls[0]
+        label_dict = {info_replacer(info, ".json"): info for info in label_zip.filelist if "json" in info.filename}
 
-            source_dict = dict()
-            for source_info in source_zip_file_info:
-                _id = source_info.filename.split("/")[-2]
-                source_dict[_id] = source_info
+        id_counter = 0
+        for audio_zip in source_ls:
+            for audio_info in audio_zip.filelist:
+                label_info = label_dict[info_replacer(audio_info, ".wav")]
 
-            label_dict = {
-                _id: {info.filename.split(".")[-1]: info for info in info_ls} for _id, info_ls in label_dict.items()
-            }
+                raw_label_data = label_zip.open(label_info).read()
+                raw_audio_data = audio_zip.open(audio_info).read()
 
-            for _id, source_info in source_dict.items():
-                label = label_dict[_id]
+                label = json.loads(raw_label_data.decode("utf-8"))
 
-                sentence = label_zip.open(label["txt"]).read().decode("utf-8")
-                meta = json.loads(label_zip.open(label["json"]).read().decode("utf-8"))
-                audio = source_zip.open(source_info).read()
+                label["audio"] = raw_audio_data
 
-                data = {
-                    "id": _id,
-                    "sentence": sentence,
-                    "audio": audio,
-                }
-                data.update(meta)
+                yield (id_counter, label)
+                id_counter += 1
 
-                yield (idx, data)
+    def _stt_generate_examples(self, filepath: List[Path], split: str):
+        source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x)]
+        label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
 
-                idx += 1
+        source_ls = natsorted(source_ls, key=lambda x: x.filename)
+        label_ls = natsorted(label_ls, key=lambda x: x.filename)
+
+        info_replacer = lambda info, key: info.filename.replace(key, "")
+
+        label_zip = label_ls[0]
+        label_dict = {info_replacer(info, ".json"): info for info in label_zip.filelist if "json" in info.filename}
+
+        id_counter = 0
+        for audio_zip in source_ls:
+            for audio_info in audio_zip.filelist:
+                label_info = label_dict[info_replacer(audio_info, ".wav")]
+
+                raw_label_data = label_zip.open(label_info).read()
+                raw_audio_data = audio_zip.open(audio_info).read()
+
+                label = json.loads(raw_label_data.decode("utf-8"))
+                audio, sr = sf.read(io.BytesIO(raw_audio_data))
+                audio_info = sf.info(io.BytesIO(raw_audio_data))
+
+                speakers_dict = {x["id"]: x for x in label["speaker"]}
+
+                for speech_part in label["utterance"]:
+                    speech_part: dict  # for intellisense
+                    speaker_id = speech_part.pop("speaker_id")
+                    form = speech_part.pop("form")
+                    speech_part["speaker"] = speakers_dict[speaker_id]
+                    speech_part["metadata"] = label["metadata"]
+                    speech_part["sentence"] = form
+
+                    # OPTIMIZE: round 때문에 음성이 겹칠 수 있는 위험이 있다.
+                    speech_start = round(speech_part["start"] * sr)
+                    speech_end = round(speech_part["end"] * sr)
+
+                    speech_array = audio[speech_start:speech_end]
+
+                    speech_byte = io.BytesIO()
+                    sf.write(
+                        file=speech_byte,
+                        data=speech_array,
+                        samplerate=sr,
+                        subtype=audio_info.subtype,
+                        endian=audio_info.endian,
+                        format=audio_info.format,
+                    )
+
+                    speech_part["audio"] = speech_byte.getvalue()
+
+                    yield (id_counter, speech_part)
+                    id_counter += 1
+
+    def _generate_examples(self, **kwargs):
+        if self.config.name == "STT":
+            return self._stt_generate_examples(**kwargs)
+        elif self.config.name == "Original":
+            return self._original_generate_examples(**kwargs)
+        else:
+            raise NotImplementedError()
