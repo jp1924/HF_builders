@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import io
 import json
 import os
 from pathlib import Path
@@ -8,7 +7,6 @@ from typing import List
 from zipfile import ZipFile
 
 import requests
-import soundfile as sf
 from datasets import (
     Audio,
     BuilderConfig,
@@ -19,6 +17,8 @@ from datasets import (
     SplitGenerator,
     Value,
 )
+import soundfile as sf
+import io
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -64,8 +64,8 @@ class ChungcheongSpeech(GeneratorBasedBuilder):
                     "sentence": Value("string"),
                     "standard_form": Value("string"),
                     "dialect_form": Value("string"),
-                    "start": Value("float16"),
-                    "end": Value("float16"),
+                    "start": Value("float32"),
+                    "end": Value("float32"),
                     "note": Value("string"),
                     "eojeolList": [
                         {
@@ -139,8 +139,8 @@ class ChungcheongSpeech(GeneratorBasedBuilder):
                             "form": Value("string"),
                             "standard_form": Value("string"),
                             "dialect_form": Value("string"),
-                            "start": Value("float16"),
-                            "end": Value("float16"),
+                            "start": Value("float32"),
+                            "end": Value("float32"),
                             "note": Value("string"),
                             "eojeolList": [
                                 {
@@ -272,7 +272,12 @@ class ChungcheongSpeech(GeneratorBasedBuilder):
         id_counter = 0
         for audio_zip in source_ls:
             for audio_info in audio_zip.filelist:
-                label_info = label_dict[info_replacer(audio_info, ".wav")]
+                audio_file_name = info_replacer(audio_info, ".wav")
+                # 일부 음성에 라벨 파일이 누락된 경우가 존재함. 라벨이 누락된 음성에 대해선 데이터를 생성하지 않고 pass 함.
+                if audio_file_name not in label_dict:
+                    continue
+
+                label_info = label_dict[audio_file_name]
 
                 raw_label_data = label_zip.open(label_info).read()
                 raw_audio_data = audio_zip.open(audio_info).read()
@@ -303,7 +308,12 @@ class ChungcheongSpeech(GeneratorBasedBuilder):
         id_counter = 0
         for audio_zip in source_ls:
             for audio_info in audio_zip.filelist:
-                label_info = label_dict[info_replacer(audio_info, ".wav")]
+                audio_file_name = info_replacer(audio_info, ".wav")
+                # 일부 음성에 라벨 파일이 누락된 경우가 존재함. 라벨이 누락된 음성에 대해선 데이터를 생성하지 않고 pass 함.
+                if audio_file_name not in label_dict:
+                    continue
+
+                label_info = label_dict[audio_file_name]
 
                 raw_label_data = label_zip.open(label_info).read()
                 raw_audio_data = audio_zip.open(audio_info).read()

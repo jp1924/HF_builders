@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import io
 import json
 import os
 from pathlib import Path
@@ -8,7 +7,6 @@ from typing import List
 from zipfile import ZipFile
 
 import requests
-import soundfile as sf
 from datasets import (
     Audio,
     BuilderConfig,
@@ -19,6 +17,8 @@ from datasets import (
     SplitGenerator,
     Value,
 )
+import soundfile as sf
+import io
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -37,9 +37,7 @@ _DESCRIPTION = """\
 
 DATASET_KEY = "118"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
-_HOMEPAGE = (
-    f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
-)
+_HOMEPAGE = f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
 
 _VERSION = "1.2.0"
 _DATANAME = "GanwonSpeech"
@@ -48,7 +46,9 @@ _DATANAME = "GanwonSpeech"
 # https://github.com/huggingface/datasets/blob/dcd01046388fc052d37acc5a450bea69e3c57afc/templates/new_dataset_script.py#L65 참고해서 만듬.
 class GanwonSpeech(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="STT", version=_VERSION, description="STT 학습에 맞춰서 최적화된 데이터"),
+        BuilderConfig(
+            name="STT", version=_VERSION, description="STT 학습에 맞춰서 최적화된 데이터"
+        ),
         # VAD에 사용할 수 있지 않을까 해서 이렇게 남겨 둠.
         BuilderConfig(name="Original", version=_VERSION, description="순수 raw 데이터"),
     ]
@@ -64,8 +64,8 @@ class GanwonSpeech(GeneratorBasedBuilder):
                     "sentence": Value("string"),
                     "standard_form": Value("string"),
                     "dialect_form": Value("string"),
-                    "start": Value("float16"),
-                    "end": Value("float16"),
+                    "start": Value("float32"),
+                    "end": Value("float32"),
                     "note": Value("string"),
                     "eojeolList": [
                         {
@@ -139,8 +139,8 @@ class GanwonSpeech(GeneratorBasedBuilder):
                             "form": Value("string"),
                             "standard_form": Value("string"),
                             "dialect_form": Value("string"),
-                            "start": Value("float16"),
-                            "end": Value("float16"),
+                            "start": Value("float32"),
+                            "end": Value("float32"),
                             "note": Value("string"),
                             "eojeolList": [
                                 {
@@ -263,12 +263,21 @@ class GanwonSpeech(GeneratorBasedBuilder):
         info_replacer = lambda info, key: info.filename.replace(key, "")
 
         label_zip = label_ls[0]
-        label_dict = {info_replacer(info, ".json"): info for info in label_zip.filelist if "json" in info.filename}
+        label_dict = {
+            info_replacer(info, ".json"): info
+            for info in label_zip.filelist
+            if "json" in info.filename
+        }
 
         id_counter = 0
         for audio_zip in source_ls:
             for audio_info in audio_zip.filelist:
-                label_info = label_dict[info_replacer(audio_info, ".wav")]
+                audio_file_name = info_replacer(audio_info, ".wav")
+                # 일부 음성에 라벨 파일이 누락된 경우가 존재함. 라벨이 누락된 음성에 대해선 데이터를 생성하지 않고 pass 함.
+                if audio_file_name not in label_dict:
+                    continue
+
+                label_info = label_dict[audio_file_name]
 
                 raw_label_data = label_zip.open(label_info).read()
                 raw_audio_data = audio_zip.open(audio_info).read()
@@ -290,18 +299,32 @@ class GanwonSpeech(GeneratorBasedBuilder):
         info_replacer = lambda info, key: info.filename.replace(key, "")
 
         label_zip = label_ls[0]
-        label_dict = {info_replacer(info, ".json"): info for info in label_zip.filelist if "json" in info.filename}
+        label_dict = {
+            info_replacer(info, ".json"): info
+            for info in label_zip.filelist
+            if "json" in info.filename
+        }
 
         id_counter = 0
         for audio_zip in source_ls:
             for audio_info in audio_zip.filelist:
-                label_info = label_dict[info_replacer(audio_info, ".wav")]
+                audio_file_name = info_replacer(audio_info, ".wav")
+                # 일부 음성에 라벨 파일이 누락된 경우가 존재함. 라벨이 누락된 음성에 대해선 데이터를 생성하지 않고 pass 함.
+                if audio_file_name not in label_dict:
+                    print(f"{audio_file_name} not have label file, processing was passed!!")
+                    continue
+
+                label_info = label_dict[audio_file_name]
 
                 raw_label_data = label_zip.open(label_info).read()
                 raw_audio_data = audio_zip.open(audio_info).read()
 
                 label = json.loads(raw_label_data.decode("utf-8"))
-                audio, sr = sf.read(io.BytesIO(raw_audio_data))
+                try:
+                    audio, sr = sf.read(io.BytesIO(raw_audio_data))
+                except sf.LibsndfileError:
+                    print(f"{audio_file_name} is corrupted! processing was passed!!")
+                    continue
                 audio_info = sf.info(io.BytesIO(raw_audio_data))
 
                 speakers_dict = {x["id"]: x for x in label["speaker"]}
