@@ -219,6 +219,9 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
 
         label_dict = dict()
         for label_zip in label_ls:
+            if "(영상)" in label_zip.filename:
+                print(f"{label_zip.filename}는 HF datasets가 영상 데이터를 처리할 수 없기 때문에 스킵함.")
+                continue
             file_type = get_file_type(label_zip.filename)
             file_name = Path(label_zip.filename).stem.split(")_")[-1]
             if "라벨링_데이터" in file_type:
@@ -260,6 +263,62 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         return
 
     def _object_generate_examples(self, filepath: List[Path], split: str):
+        def get_file_type(filename: str) -> str:
+            start_idx = filename.rindex("라벨링데이터") + len("라벨링데이터/")
+            end_idx = filename.rindex("_image(")
+            file_type = filename[start_idx:end_idx]
+
+            return file_type
+
+        source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x)]
+        label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
+
+        source_ls = natsorted(source_ls, key=lambda x: x.filename)
+        label_ls = natsorted(label_ls, key=lambda x: x.filename)
+
+        label_dict = dict()
+        for label_zip in label_ls:
+            if "(영상)" in label_zip.filename:
+                print(f"{label_zip.filename}는 HF datasets가 영상 데이터를 처리할 수 없기 때문에 스킵함.")
+                continue
+            file_type = get_file_type(label_zip.filename)
+            file_name = Path(label_zip.filename).stem.split(")_")[-1]
+            if "객체정보_메타데이터" in file_type:
+                label_dict[file_name] = label_zip
+
+        source_data_dict = dict()
+        for source_zip in source_ls:
+            file_name = Path(source_zip.filename).stem.split(")_")[-1]
+            source_data_dict[file_name] = source_zip
+
+        idx_counter = 0
+        for label_prefix, label_zip in label_dict.items():
+            source_zip = source_data_dict[label_prefix]
+            source_info_dict = {info.filename.replace("/", ""): info for info in source_zip.filelist}
+
+            for info in label_zip.filelist:
+                label_byte = label_zip.open(info).read()
+                label = json.loads(label_byte.decode("utf-8"))
+
+                if len(label["images"]) >= 2:
+                    print(info)
+                    print(label)
+                    raise ValueError("images가 2개임!!!! 확인 필요")
+
+                source_info = source_info_dict[label["images"][0]["file_name"]]
+                image_byte = source_zip.open(source_info).read()
+
+                for annotation in label["annotations"]:
+                    annotation["categories"] = label["categories"]
+                    annotation["width"] = label["images"][0]["width"]
+                    annotation["height"] = label["images"][0]["height"]
+                    annotation["file_name"] = label["images"][0]["file_name"]
+                    annotation["info"] = label["info"]
+                    annotation["image"] = image_byte
+
+                    yield (idx_counter, annotation)
+                    idx_counter += 1
+
         def get_file_type(filename: str) -> str:
             start_idx = filename.rindex("라벨링데이터") + len("라벨링데이터/")
             end_idx = filename.rindex("_image(")
