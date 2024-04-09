@@ -282,7 +282,9 @@ class JejuSpeech(GeneratorBasedBuilder):
                 raw_label_data = label_zip.open(label_info).read()
                 raw_audio_data = audio_zip.open(audio_info).read()
 
-                label = json.loads(raw_label_data.decode("utf-8"))
+                label = label = json.loads(
+                    raw_label_data.decode(json.detect_encoding(raw_label_data))
+                )
 
                 label["audio"] = raw_audio_data
 
@@ -319,7 +321,7 @@ class JejuSpeech(GeneratorBasedBuilder):
                 raw_label_data = label_zip.open(label_info).read()
                 raw_audio_data = audio_zip.open(audio_info).read()
 
-                label = json.loads(raw_label_data.decode("utf-8"))
+                label = json.loads(raw_label_data.decode(json.detect_encoding(raw_label_data)))
                 try:
                     audio, sr = sf.read(io.BytesIO(raw_audio_data))
                 except sf.LibsndfileError:
@@ -333,7 +335,10 @@ class JejuSpeech(GeneratorBasedBuilder):
                     speech_part: dict  # for intellisense
                     speaker_id = speech_part.pop("speaker_id")
                     form = speech_part.pop("form")
-                    speech_part["speaker"] = speakers_dict[speaker_id]
+                    if speaker_id and (speaker_id in speakers_dict):
+                        speech_part["speaker"] = speakers_dict[speaker_id]
+                    else:
+                        speech_part["speaker"] = None
                     speech_part["metadata"] = label["metadata"]
                     speech_part["sentence"] = form
 

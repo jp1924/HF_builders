@@ -35,9 +35,7 @@ _DESCRIPTION = """\
 
 DATASET_KEY = "71454"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
-_HOMEPAGE = (
-    f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
-)
+_HOMEPAGE = f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
 
 _VERSION = "1.1.0"
 _DATANAME = "KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration"
@@ -56,8 +54,12 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
             features = Features(
                 {
                     "image": Image(),
-                    "caption": Value("string"),
-                    "english": Value("string"),
+                    "annotations": [
+                        {
+                            "korean": Value("string"),
+                            "english": Value("string"),
+                        }
+                    ],
                     "id": Value("string"),
                     "height": Value("int32"),
                     "width": Value("int32"),
@@ -81,11 +83,9 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
             features = Features(
                 {
                     "image": Image(),
-                    "id": Value("int16"),
-                    "image_id": Value("int16"),
-                    "category_id": Value("int32"),
-                    "height": Value("int32"),
-                    "width": Value("int32"),
+                    "id": Value("string"),
+                    "height": Value("int16"),
+                    "width": Value("int16"),
                     "file_name": Value("string"),
                     "categories": [
                         {
@@ -100,9 +100,16 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
                         "year": Value("string"),
                         "main_category": Value("string"),
                     },
-                    "iscrowd": Value("int32"),
-                    "bbox": [Value("float32")],
-                    "area": Value("float32"),
+                    "annotations": [
+                        {
+                            "id": Value("int16"),
+                            "image_id": Value("int16"),
+                            "category_id": Value("int16"),
+                            "iscrowd": Value("int8"),
+                            "bbox": [Value("float32")],
+                            "area": Value("float32"),
+                        }
+                    ],
                 }
             )
         else:
@@ -220,7 +227,9 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         label_dict = dict()
         for label_zip in label_ls:
             if "(영상)" in label_zip.filename:
-                print(f"{label_zip.filename}는 HF datasets가 영상 데이터를 처리할 수 없기 때문에 스킵함.")
+                print(
+                    f"{label_zip.filename}는 HF datasets가 영상 데이터를 처리할 수 없기 때문에 스킵함."
+                )
                 continue
             file_type = get_file_type(label_zip.filename)
             file_name = Path(label_zip.filename).stem.split(")_")[-1]
@@ -235,7 +244,9 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         idx_counter = 0
         for label_prefix, label_zip in label_dict.items():
             source_zip = source_data_dict[label_prefix]
-            source_info_dict = {info.filename.replace("/", ""): info for info in source_zip.filelist}
+            source_info_dict = {
+                info.filename.replace("/", ""): info for info in source_zip.filelist
+            }
 
             for info in label_zip.filelist:
                 label_byte = label_zip.open(info).read()
@@ -246,19 +257,24 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
                     print(label)
                     raise ValueError("images가 2개임!!!! 확인 필요")
 
-                source_info = source_info_dict[label["images"][0]["file_name"]]
+                file_name = label["images"][0]["file_name"]
+                if file_name not in source_info_dict:
+                    print(f"{file_name}: was skip")
+                    continue
+
+                source_info = source_info_dict[file_name]
                 image_byte = source_zip.open(source_info).read()
 
-                for annotation in label["annotations"]:
-                    caption = annotation.pop("korean")
-                    annotation["caption"] = caption
-                    annotation["categories"] = label["categories"]
-                    annotation.update(label["images"][0])
-                    annotation["info"] = label["info"]
-                    annotation["image"] = image_byte
+                image_info = label.pop("images")[0]
 
-                    yield (idx_counter, annotation)
-                    idx_counter += 1
+                label["id"] = image_info["id"]
+                label["height"] = image_info["height"]
+                label["width"] = image_info["width"]
+                label["file_name"] = image_info["file_name"]
+                label["image"] = image_byte
+
+                yield (idx_counter, label)
+                idx_counter += 1
 
         return
 
@@ -278,9 +294,6 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
 
         label_dict = dict()
         for label_zip in label_ls:
-            if "(영상)" in label_zip.filename:
-                print(f"{label_zip.filename}는 HF datasets가 영상 데이터를 처리할 수 없기 때문에 스킵함.")
-                continue
             file_type = get_file_type(label_zip.filename)
             file_name = Path(label_zip.filename).stem.split(")_")[-1]
             if "객체정보_메타데이터" in file_type:
@@ -294,7 +307,9 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         idx_counter = 0
         for label_prefix, label_zip in label_dict.items():
             source_zip = source_data_dict[label_prefix]
-            source_info_dict = {info.filename.replace("/", ""): info for info in source_zip.filelist}
+            source_info_dict = {
+                info.filename.replace("/", ""): info for info in source_zip.filelist
+            }
 
             for info in label_zip.filelist:
                 label_byte = label_zip.open(info).read()
@@ -305,72 +320,24 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
                     print(label)
                     raise ValueError("images가 2개임!!!! 확인 필요")
 
-                source_info = source_info_dict[label["images"][0]["file_name"]]
+                file_name = label["images"][0]["file_name"]
+                if file_name not in source_info_dict:
+                    print(f"{file_name}: was skip")
+                    continue
+
+                source_info = source_info_dict[file_name]
                 image_byte = source_zip.open(source_info).read()
 
-                for annotation in label["annotations"]:
-                    annotation["categories"] = label["categories"]
-                    annotation["width"] = label["images"][0]["width"]
-                    annotation["height"] = label["images"][0]["height"]
-                    annotation["file_name"] = label["images"][0]["file_name"]
-                    annotation["info"] = label["info"]
-                    annotation["image"] = image_byte
+                image_info = label.pop("images")[0]
 
-                    yield (idx_counter, annotation)
-                    idx_counter += 1
+                label["id"] = image_info["id"]
+                label["height"] = image_info["height"]
+                label["width"] = image_info["width"]
+                label["file_name"] = image_info["file_name"]
+                label["image"] = image_byte
 
-        def get_file_type(filename: str) -> str:
-            start_idx = filename.rindex("라벨링데이터") + len("라벨링데이터/")
-            end_idx = filename.rindex("_image(")
-            file_type = filename[start_idx:end_idx]
-
-            return file_type
-
-        source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x)]
-        label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
-
-        source_ls = natsorted(source_ls, key=lambda x: x.filename)
-        label_ls = natsorted(label_ls, key=lambda x: x.filename)
-
-        label_dict = dict()
-        for label_zip in label_ls:
-            file_type = get_file_type(label_zip.filename)
-            file_name = Path(label_zip.filename).stem.split(")_")[-1]
-            if "객체정보_메타데이터" in file_type:
-                label_dict[file_name] = label_zip
-
-        source_data_dict = dict()
-        for source_zip in source_ls:
-            file_name = Path(source_zip.filename).stem.split(")_")[-1]
-            source_data_dict[file_name] = source_zip
-
-        idx_counter = 0
-        for label_prefix, label_zip in label_dict.items():
-            source_zip = source_data_dict[label_prefix]
-            source_info_dict = {info.filename.replace("/", ""): info for info in source_zip.filelist}
-
-            for info in label_zip.filelist:
-                label_byte = label_zip.open(info).read()
-                label = json.loads(label_byte.decode("utf-8"))
-
-                if len(label["images"]) >= 2:
-                    print(info)
-                    print(label)
-                    raise ValueError("images가 2개임!!!! 확인 필요")
-
-                source_info = source_info_dict[label["images"][0]["file_name"]]
-                image_byte = source_zip.open(source_info).read()
-
-                for annotation in label["annotations"]:
-                    annotation["categories"] = label["categories"]
-                    annotation["width"] = label["images"][0]["width"]
-                    annotation["height"] = label["images"][0]["height"]
-                    annotation["file_name"] = label["images"][0]["file_name"]
-                    annotation["info"] = label["info"]
-                    annotation["image"] = image_byte
-
-                    yield (idx_counter, annotation)
-                    idx_counter += 1
+                yield (idx_counter, label)
+                idx_counter += 1
 
     def _generate_examples(self, **kwargs):
         if self.config.name == "caption":
