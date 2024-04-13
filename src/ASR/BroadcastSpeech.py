@@ -38,9 +38,7 @@ _DESCRIPTION = """\
 
 DATASET_KEY = "463"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
-_HOMEPAGE = (
-    f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
-)
+_HOMEPAGE = f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
 
 _VERSION = "1.0.0"
 _DATANAME = "BroadcastSpeech"
@@ -50,7 +48,9 @@ DATASET_SIZE = 838.91
 # https://github.com/huggingface/datasets/blob/dcd01046388fc052d37acc5a450bea69e3c57afc/templates/new_dataset_script.py#L65 참고해서 만듬.
 class BroadcastSpeech(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="STT", version=_VERSION, description="STT 학습에 맞춰서 최적화된 데이터"),
+        BuilderConfig(
+            name="STT", version=_VERSION, description="STT 학습에 맞춰서 최적화된 데이터"
+        ),
     ]
 
     DEFAULT_CONFIG_NAME = "STT"
@@ -68,20 +68,20 @@ class BroadcastSpeech(GeneratorBasedBuilder):
                 "environment": Value("string"),
                 "hangeulToEnglish": [
                     {
-                        "id": Value("int8"),
+                        "id": Value("int16"),
                         "hangeul": Value("string"),
                         "english": Value("string"),
-                        "begin": Value("int8"),
-                        "end": Value("int8"),
+                        "begin": Value("int16"),
+                        "end": Value("int16"),
                     }
                 ],
                 "hangeulToNumber": [
                     {
-                        "id": Value("int8"),
+                        "id": Value("int16"),
                         "hangeul": Value("string"),
                         "number": Value("string"),
-                        "begin": Value("int8"),
-                        "end": Value("int8"),
+                        "begin": Value("int16"),
+                        "end": Value("int16"),
                     }
                 ],
                 "speaker": {
@@ -95,7 +95,7 @@ class BroadcastSpeech(GeneratorBasedBuilder):
                     "title": Value("string"),
                     "creator": Value("string"),
                     "distributor": Value("string"),
-                    "year": Value("int8"),
+                    "year": Value("int16"),
                     "category": Value("string"),
                     "sampling": Value("string"),
                     "date": Value("string"),
@@ -104,7 +104,7 @@ class BroadcastSpeech(GeneratorBasedBuilder):
                     "communication": Value("string"),
                     "type": Value("string"),
                     "domain": Value("string"),
-                    "speaker_num": Value("int8"),
+                    "speaker_num": Value("int16"),
                     "organization": Value("string"),
                     "annotation_level": Value("string"),
                 },
@@ -142,7 +142,9 @@ class BroadcastSpeech(GeneratorBasedBuilder):
         )
 
         if response.status_code == 502:
-            raise BaseException("다운로드 서비스는 홈페이지(https://aihub.or.kr)에서 신청 및 승인 후 이용 가능 합니다.")
+            raise BaseException(
+                "다운로드 서비스는 홈페이지(https://aihub.or.kr)에서 신청 및 승인 후 이용 가능 합니다."
+            )
         elif response.status_code != 200:
             raise BaseException(f"Download failed with HTTP status code: {response.status_code}")
 
@@ -233,16 +235,14 @@ class BroadcastSpeech(GeneratorBasedBuilder):
 
             audio_filelist = natsorted(audio_filelist, key=lambda x: x.filename)
             label_filelist = natsorted(label_filelist, key=lambda x: x.filename)
+            label_dict = {info_replacer(x, ".json"): x for x in label_filelist}
 
-            if len(audio_filelist) != len(label_filelist):
-                raise ValueError()
-
-            for audio_info, label_info in zip(audio_filelist, label_filelist):
+            for audio_info in audio_filelist:
                 audio_file_name = info_replacer(audio_info, ".wav")
-                label_file_name = info_replacer(label_info, ".json")
-
-                if audio_file_name != label_file_name:
-                    raise ValueError()
+                if audio_file_name not in label_dict:
+                    print(f"{audio_file_name}와 매칭되는 파일이 없음. 해당 파일은 스킵함.")
+                    continue
+                label_info = label_dict[audio_file_name]
 
                 raw_label_data = label_zip.open(label_info).read()
                 raw_audio_data = audio_zip.open(audio_info).read()
@@ -263,28 +263,57 @@ class BroadcastSpeech(GeneratorBasedBuilder):
                     speaker_id = speech_part.pop("speaker_id")
                     form = speech_part.pop("form")
 
-                    speech_part["speaker"] = speakers_dict[speaker_id] if speaker_id in speakers_dict else None
+                    speech_part["speaker"] = (
+                        speakers_dict[speaker_id] if speaker_id in speakers_dict else None
+                    )
                     speech_part["metadata"] = metadata
 
                     # ETRI 전사규칙에 따라 철자는 오른쪽, 발음은 왼쪽으로 바꿔야 함.
                     if speech_part["hangeulToNumber"]:
-                        hangeulToNumber = list({x["hangeul"]: x for x in speech_part["hangeulToNumber"]}.values())
+                        hangeulToNumber = list(
+                            {x["hangeul"]: x for x in speech_part["hangeulToNumber"]}.values()
+                        )
 
                         for example in hangeulToNumber:
                             find_regex = f"""({example["hangeul"]})/({example["number"]})"""
+                            find_regex_1 = f"""(@{example["hangeul"]})/(@{example["number"]})"""
+                            find_regex_2 = f"""({example["hangeul"]})/(@{example["number"]})"""
+                            find_regex_3 = f"""(@{example["hangeul"]})/({example["number"]})"""
+
                             replace_regex = f"""({example["number"]})/({example["hangeul"]})"""
 
                             if replace_regex in form:
                                 # 내가 원하는 이중전사가 포함된 경우 스킵
                                 continue
 
-                            if find_regex not in form:
-                                raise ValueError("이중 전사가 잘못된 녀석")
+                            if (
+                                (find_regex not in form)
+                                and (find_regex_1 not in form)
+                                and (find_regex_2 not in form)
+                                and (find_regex_3 not in form)
+                            ):
+                                error_msg = (
+                                    f"이중 전사가 잘못된 녀석: {form}\n"
+                                    f"regex_1: {find_regex}\n"
+                                    f"regex_2: {find_regex_1}"
+                                    f"regex_3: {find_regex_2}"
+                                    f"regex_4: {find_regex_3}"
+                                    f"replace_regex: {replace_regex}"
+                                    f"""hangeulToNumber: {speech_part["hangeulToNumber"]}"""
+                                )
+                                print(error_msg)
+                                continue
+                                raise ValueError(error_msg)
 
                             form = form.replace(find_regex, replace_regex)
+                            form = form.replace(find_regex_1, replace_regex)
+                            form = form.replace(find_regex_2, replace_regex)
+                            form = form.replace(find_regex_3, replace_regex)
 
                     if speech_part["hangeulToEnglish"]:
-                        hangeulToEnglish = list({x["hangeul"]: x for x in speech_part["hangeulToEnglish"]}.values())
+                        hangeulToEnglish = list(
+                            {x["hangeul"]: x for x in speech_part["hangeulToEnglish"]}.values()
+                        )
                         for example in hangeulToEnglish:
                             find_regex = f"""({example["hangeul"]})/({example["english"]})"""
                             find_regex_1 = f"""(@{example["hangeul"]})/(@{example["english"]})"""
@@ -297,12 +326,22 @@ class BroadcastSpeech(GeneratorBasedBuilder):
                                 continue
                             if (
                                 (find_regex not in form)
-                                and (find_regex not in form)
                                 and (find_regex_1 not in form)
                                 and (find_regex_2 not in form)
                                 and (find_regex_3 not in form)
                             ):
-                                raise ValueError("이중 전사가 잘못된 녀석")
+                                error_msg = (
+                                    f"이중 전사가 잘못된 녀석: {form}\n"
+                                    f"regex_1: {find_regex}\n"
+                                    f"regex_2: {find_regex_1}"
+                                    f"regex_3: {find_regex_2}"
+                                    f"regex_4: {find_regex_3}"
+                                    f"replace_regex: {replace_regex}"
+                                    f"""hangeulToEnglish: {speech_part["hangeulToEnglish"]}"""
+                                )
+                                print(error_msg)
+                                continue
+                                raise ValueError(error_msg)
 
                             form = form.replace(find_regex, replace_regex)
                             form = form.replace(find_regex_1, replace_regex)
