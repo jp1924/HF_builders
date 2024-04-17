@@ -39,6 +39,7 @@ _HOMEPAGE = f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=10
 
 _VERSION = "1.1.0"
 _DATANAME = "KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration"
+DATASET_SIZE = 1464.32
 
 
 class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(GeneratorBasedBuilder):
@@ -124,7 +125,7 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
             version=_VERSION,
         )
 
-    def aihub_downloader(self, recv_path: Path) -> None:
+    def aihub_downloader(self, destination_path: Path) -> None:
         aihub_id = os.getenv("AIHUB_ID", None)
         aihub_pass = os.getenv("AIHUB_PASS", None)
 
@@ -144,13 +145,25 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
             stream=True,
         )
 
-        if response.status_code != 200:
+        if response.status_code == 502:
+            raise BaseException(
+                "다운로드 서비스는 홈페이지(https://aihub.or.kr)에서 신청 및 승인 후 이용 가능 합니다."
+            )
+        elif response.status_code != 200:
             raise BaseException(f"Download failed with HTTP status code: {response.status_code}")
 
-        with open(recv_path, "wb") as file:
-            # chunk_size는 byte수
-            for chunk in tqdm(response.iter_content(chunk_size=1024)):
-                file.write(chunk)
+        data_file = open(destination_path, "wb")
+        downloaded_bytes = 0
+        with tqdm(total=round(DATASET_SIZE * 1024**2)) as pbar:
+            for chunk in response.iter_content(chunk_size=1024):
+                data_file.write(chunk)
+                downloaded_bytes += len(chunk)
+
+                pbar.update(1)
+                prefix = f"Downloaded (GB): {downloaded_bytes / (1024**3):.4f}/{DATASET_SIZE}"
+                pbar.set_postfix_str(prefix)
+
+        data_file.close()
 
     def concat_zip_part(self, unzip_dir: Path) -> None:
         part_glob = Path(unzip_dir).rglob("*.zip.part*")
