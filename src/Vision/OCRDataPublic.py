@@ -50,31 +50,29 @@ class OCRDataPublic(GeneratorBasedBuilder):
         features = Features(
             {
                 "image": Image(),
-                "meta_data": [
-                    {
-                        "object_recognition": Value("int32"),
-                        "text_language": Value("int32"),
-                        "category": Value("int32"),
-                        "identifier": Value("string"),
-                        "label_path": Value("string"),
-                        "name": Value("string"),
-                        "src_path": Value("string"),
-                        "type": Value("string"),
-                        "acquisition_location": Value("int32"),
-                        "data_captured": Value("string"),
-                        "dpi": Value("int32"),
-                        "group": Value("int32"),
-                        "height": Value("int32"),
-                        "width": Value("int32"),
-                        "writing_style": Value("int32"),
-                        "year": Value("int32"),
-                    }
-                ],
+                "meta_data": {
+                    "object_recognition": Value("int32"),
+                    "text_language": Value("int32"),
+                    "category": Value("int32"),
+                    "identifier": Value("string"),
+                    "label_path": Value("string"),
+                    "name": Value("string"),
+                    "src_path": Value("string"),
+                    "type": Value("string"),
+                    "acquisition_location": Value("int32"),
+                    "data_captured": Value("string"),
+                    "dpi": Value("int32"),
+                    "group": Value("int32"),
+                    "height": Value("int32"),
+                    "width": Value("int32"),
+                    "writing_style": Value("int32"),
+                    "year": Value("int32"),
+                },
                 "objects": [
                     {
                         "id": Value("int32"),
                         "text": Value("string"),
-                        "bbox": (Value("int32")),
+                        "bbox": [Value("int32")],
                         "meta": {
                             "type": Value("string"),
                             "text_type": Value("string"),
@@ -236,8 +234,25 @@ class OCRDataPublic(GeneratorBasedBuilder):
                     x_cord = sorted(set(bbox["x"]))
                     y_cord = sorted(set(bbox["y"]))
 
+                    if len(x_cord) != 2:
+                        # 무조건 x_min, y_min, x_max, y_max 값이 있어야지 bbox를 표시할 수 있는데 이건 하나 밖에 없어서 안됨
+                        # 이 데이터는 특이하게 [123, 234, 123, 234]와 같이 표기되어 있는데 데이터 설명서에도 관련된 설명이 없음.
+                        # 그래서 set을 한 뒤 sort를 하면 정상적으로 bbox가 맺히는걸 확인 했으나
+                        # 그런 케이스에 들어가지 않는 포맷이라면 필터링 하기로 함.
+                        print(f"""{bbox["x"]}\n{bbox["y"]}""")
+                        print(f"{image_info.filename}는 bbox가 이상해서 패스 함")
+                        continue
+
+                    if len(y_cord) != 2:
+                        print(f"""{bbox["x"]}\n{bbox["y"]}""")
+                        print(f"{image_info.filename}는 패스 함")
+                        continue
+
                     # [x_min, y_min, x_max, y_max]
-                    coordinate = (x_cord[0], y_cord[0], x_cord[1], y_cord[1])
+                    try:
+                        coordinate = (x_cord[0], y_cord[0], x_cord[1], y_cord[1])
+                    except:
+                        breakpoint()
                     meta = {"type": bbox["type"], "text_type": bbox["typeface"]}
 
                     new_bbox = {
