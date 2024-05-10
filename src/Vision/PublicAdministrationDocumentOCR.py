@@ -65,7 +65,7 @@ class PublicAdministrationDocumentOCR(GeneratorBasedBuilder):
                     {
                         "id": Value("int32"),
                         "text": Value("string"),
-                        "bbox": (Value("int32")),
+                        "bbox": [Value("int32")],
                         "meta": {
                             "type": Value("string"),
                             "text_type": Value("string"),
@@ -191,9 +191,7 @@ class PublicAdministrationDocumentOCR(GeneratorBasedBuilder):
         source_check_count = 0
         for source_zip in source_ls:
             info_ls = [info for info in source_zip.filelist if not info.is_dir()]
-            info_dict = {
-                info_replacer(info, ".jpg"): source_zip.open(info).read() for info in info_ls
-            }
+            info_dict = {info_replacer(info, ".jpg"): source_zip.open(info) for info in info_ls}
 
             source_check_count += len(info_ls)
             source_dict.update(info_dict)
@@ -205,9 +203,7 @@ class PublicAdministrationDocumentOCR(GeneratorBasedBuilder):
         label_check_count = 0
         for label_zip in label_ls:
             info_ls = [info for info in label_zip.filelist if not info.is_dir()]
-            info_dict = {
-                info_replacer(info, ".json"): label_zip.open(info).read() for info in info_ls
-            }
+            info_dict = {info_replacer(info, ".json"): label_zip.open(info) for info in info_ls}
 
             label_check_count += len(info_ls)
             label_dict.update(info_dict)
@@ -224,9 +220,13 @@ class PublicAdministrationDocumentOCR(GeneratorBasedBuilder):
                 print()
                 continue
 
-            label_bytes = label_dict[file_name]
+            label_bytes = label_dict[file_name].read()
             encoding_type = json.detect_encoding(label_bytes)
-            label = json.loads(label_bytes.decode(encoding_type))
+            try:
+                label = json.loads(label_bytes.decode(encoding_type))
+            except:
+                print(f"{file_name}를 불러들이지 못함. 아마 인코딩 애러갑 라생 했는 듯")
+                continue
 
             images = label.pop("images")
             old_bbox_ls = label.pop("annotations")
@@ -252,7 +252,7 @@ class PublicAdministrationDocumentOCR(GeneratorBasedBuilder):
 
             dataset = {
                 "objects": new_bbox_ls,
-                "image": image_byte,
+                "image": image_byte.read(),
                 "meta_data": images,
             }
             yield (idx_count, dataset)
