@@ -42,7 +42,7 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
             features=Features(
                 {
                     "image": Image(),
-                    "conversations": [{"from": Value("string"), "value": Value("string")}],
+                    "conversations": [{"role": Value("string"), "content": Value("string")}],
                     "id": Value("string"),
                 }
             ),
@@ -194,5 +194,12 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
             else:
                 image = image.read_bytes()
             x["image"] = image
+
+            new_conversations_ls = list()
+            for y in x["conversations"]:
+                role = "user" if y["from"] == "human" else "assistant"
+                new_conversations_ls.append({"role": role, "content": y["value"].replace("<image>", "").strip()})
+
+            x["conversations"] = new_conversations_ls
 
             yield (idx, x)
