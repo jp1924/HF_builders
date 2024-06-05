@@ -3,7 +3,6 @@ import json
 import os
 from pathlib import Path
 from tarfile import TarFile
-from typing import List
 from zipfile import ZipExtFile, ZipFile
 
 import requests

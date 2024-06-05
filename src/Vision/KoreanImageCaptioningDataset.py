@@ -13,13 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """COCO"""
+
 import json
 import os
+import random
 from pathlib import Path
 from tarfile import TarFile
 
-import datasets
 import requests
+from datasets import (
+    BuilderConfig,
+    DatasetInfo,
+    Features,
+    GeneratorBasedBuilder,
+    Image,
+    Split,
+    SplitGenerator,
+    Value,
+    Version,
+)
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -31,6 +43,17 @@ _CITATION = """
                Lubomir D. Bourdev and
                Ross B. Girshick and
                James Hays and
+
+
+
+
+
+
+
+
+
+
+
                Pietro Perona and
                Deva Ramanan and
                Piotr Doll{\'{a}}r and
@@ -67,21 +90,7 @@ _KARPATHY_FILES_URL = "https://cs.stanford.edu/people/karpathy/deepimagesent/cap
 
 _SPLIT_MAP = {"train": "train2014", "validation": "val2014"}
 
-_FEATURES = datasets.Features(
-    {
-        "image": datasets.Image(),
-        "filepath": datasets.Value("string"),
-        "sentids": [datasets.Value("int32")],
-        "filename": datasets.Value("string"),
-        "imgid": datasets.Value("int32"),
-        "split": datasets.Value("string"),
-        "sentences_tokens": [[datasets.Value("string")]],
-        "en_sentences_raw": [datasets.Value("string")],
-        "ko_sentences_raw": [datasets.Value("string")],
-        "sentences_sentid": [datasets.Value("int32")],
-        "cocoid": datasets.Value("int32"),
-    }
-)
+
 DATASET_KEY = "261"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
 _HOMEPAGE = (
@@ -92,11 +101,11 @@ _VERSION = "1.0.0"
 _DATANAME = "KoreanImageCaptioningDataset"
 
 
-class KoreanImageCaptioningDataset(datasets.GeneratorBasedBuilder):
-    VERSION = datasets.Version(_VERSION)
+class KoreanImageCaptioningDataset(GeneratorBasedBuilder):
+    VERSION = Version(_VERSION)
 
     BUILDER_CONFIGS = [
-        datasets.BuilderConfig(
+        BuilderConfig(
             name="default",
             version=VERSION,
             description="Same as 2014 but with all captions of one image gathered in a single example",
@@ -104,9 +113,27 @@ class KoreanImageCaptioningDataset(datasets.GeneratorBasedBuilder):
     ]
 
     DEFAULT_CONFIG_NAME = "default"
+    VERSION = _VERSION
 
     def _info(self):
-        return datasets.DatasetInfo(
+        _FEATURES = Features(
+            {
+                "id": Value("int32"),
+                "image": Image(),
+                "caption": Value("string"),
+                "caption_ls": [Value("string")],
+                "category": Value("string"),
+                "filepath": Value("string"),
+                "sentids": [Value("int32")],
+                "filename": Value("string"),
+                "split": Value("string"),
+                "sentences_tokens": [[Value("string")]],
+                "en_sentences_raw": [Value("string")],
+                "sentences_sentid": [Value("int32")],
+                "cocoid": Value("int32"),
+            }
+        )
+        return DatasetInfo(
             description=_DESCRIPTION,
             features=_FEATURES,
             homepage=_HOMEPAGE,
@@ -184,8 +211,8 @@ class KoreanImageCaptioningDataset(datasets.GeneratorBasedBuilder):
         image_folders = {k: Path(v) for k, v in dl_manager.download_and_extract(_IMAGES_URLS).items()}
 
         return [
-            datasets.SplitGenerator(
-                name=datasets.Split.TRAIN,
+            SplitGenerator(
+                name=Split.TRAIN,
                 gen_kwargs={
                     "annotation_file": annotation_file,
                     "ko_annotation_file": json_file_path,
@@ -193,8 +220,8 @@ class KoreanImageCaptioningDataset(datasets.GeneratorBasedBuilder):
                     "split_key": "train",
                 },
             ),
-            datasets.SplitGenerator(
-                name=datasets.Split.VALIDATION,
+            SplitGenerator(
+                name=Split.VALIDATION,
                 gen_kwargs={
                     "annotation_file": annotation_file,
                     "ko_annotation_file": json_file_path,
@@ -202,8 +229,8 @@ class KoreanImageCaptioningDataset(datasets.GeneratorBasedBuilder):
                     "split_key": "validation",
                 },
             ),
-            datasets.SplitGenerator(
-                name=datasets.Split.TEST,
+            SplitGenerator(
+                name=Split.TEST,
                 gen_kwargs={
                     "annotation_file": annotation_file,
                     "ko_annotation_file": json_file_path,
@@ -214,12 +241,13 @@ class KoreanImageCaptioningDataset(datasets.GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, annotation_file, ko_annotation_file: Path, image_folders, split_key):
+        random.seed(42)
         with open(annotation_file, "r", encoding="utf-8") as fi:
             annotations = json.load(fi)
             ko_annotation = json.loads(ko_annotation_file.read_text())
             ko_annotation = {x["id"]: x for x in ko_annotation}
 
-            for image_metadata in annotations["images"]:
+            for idx, image_metadata in enumerate(annotations["images"]):
                 if split_key == "train":
                     if image_metadata["split"] != "train" and image_metadata["split"] != "restval":
                         continue
@@ -238,17 +266,19 @@ class KoreanImageCaptioningDataset(datasets.GeneratorBasedBuilder):
                 image_path = image_path / image_metadata["filename"]
 
                 record = {
+                    "id": image_metadata["imgid"],
                     "image": Path(image_path.absolute()).read_bytes(),
+                    "caption": random.choice(ko_annotation[image_metadata["cocoid"]]["caption_ko"]),
+                    "caption_ls": ko_annotation[image_metadata["cocoid"]]["caption_ko"],
+                    "category": None,
                     "filepath": image_metadata["filename"],
                     "sentids": image_metadata["sentids"],
                     "filename": image_metadata["filename"],
-                    "imgid": image_metadata["imgid"],
                     "split": image_metadata["split"],
                     "cocoid": image_metadata["cocoid"],
                     "sentences_tokens": [caption["tokens"] for caption in image_metadata["sentences"]],
                     "en_sentences_raw": [caption["raw"] for caption in image_metadata["sentences"]],
-                    "ko_sentences_raw": ko_annotation[image_metadata["cocoid"]]["caption_ko"],
                     "sentences_sentid": [caption["sentid"] for caption in image_metadata["sentences"]],
                 }
 
-                yield record["imgid"], record
+                yield idx, record

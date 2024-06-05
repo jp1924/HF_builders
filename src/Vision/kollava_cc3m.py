@@ -38,9 +38,9 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
         return DatasetInfo(
             features=Features(
                 {
+                    "id": Value("string"),
                     "image": Image(),
                     "conversations": [{"role": Value("string"), "content": Value("string")}],
-                    "id": Value("string"),
                 }
             ),
             supervised_keys=None,

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import random
 from pathlib import Path
 from tarfile import TarFile
 from typing import List
@@ -20,6 +21,7 @@ from datasets import (
 from natsort import natsorted
 from tqdm import tqdm
 
+
 _LICENSE = """
 AI 데이터 허브에서 제공되는 인공지능 학습용 데이터(이하 ‘AI데이터’라고 함)는 과학기술정보통신부와 한국지능정보사회진흥원의 「지능정보산업 인프라 조성」 사업의 일환으로 구축되었으며, 본 사업의 유‧무형적 결과물인 데이터, AI응용모델 및 데이터 저작도구의 소스, 각종 매뉴얼 등(이하 ‘AI데이터 등’)에 대한 일체의 권리는 AI데이터 등의 구축 수행기관 및 참여기관(이하 ‘수행기관 등’)과 한국지능정보사회진흥원에 있습니다.
 
@@ -35,7 +37,9 @@ _DESCRIPTION = """\
 
 DATASET_KEY = "71454"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
-_HOMEPAGE = f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
+_HOMEPAGE = (
+    f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
+)
 
 _VERSION = "1.1.0"
 _DATANAME = "KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration"
@@ -48,35 +52,27 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         BuilderConfig(name="caption", version=_VERSION, description="캡션 데이터"),
     ]
 
-    DEFAULT_CONFIG_NAME = "default"
+    DEFAULT_CONFIG_NAME = "caption"
 
     def _info(self) -> DatasetInfo:
         if self.config.name == "caption":
             features = Features(
                 {
+                    "id": Value("int32"),
                     "image": Image(),
-                    "annotations": [
-                        {
-                            "korean": Value("string"),
-                            "english": Value("string"),
-                        }
-                    ],
-                    "id": Value("string"),
-                    "height": Value("int32"),
-                    "width": Value("int32"),
-                    "file_name": Value("string"),
-                    "categories": [
-                        {
-                            "supercategory": Value("string"),
-                            "id": Value("string"),
-                            "name": Value("string"),
-                        }
-                    ],
-                    "info": {
+                    "caption": Value("string"),
+                    "caption_ls": [Value("string")],
+                    "category": Value("string"),
+                    "en_caption": [Value("string")],
+                    "metadata": {
                         "description": Value("string"),
                         "version": Value("string"),
-                        "year": Value("string"),
+                        "data_year": Value("string"),
                         "main_category": Value("string"),
+                        "width": Value("int32"),
+                        "height": Value("int32"),
+                        "file_name": Value("string"),
+                        "supercategory": Value("string"),
                     },
                 }
             )
@@ -224,6 +220,8 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         ]
 
     def _caption_generate_examples(self, filepath: List[Path], split: str):
+        random.seed(42)
+
         def get_file_type(filename: str) -> str:
             start_idx = filename.rindex("라벨링데이터") + len("라벨링데이터/")
             end_idx = filename.rindex("_image(")
@@ -240,9 +238,7 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         label_dict = dict()
         for label_zip in label_ls:
             if "(영상)" in label_zip.filename:
-                print(
-                    f"{label_zip.filename}는 HF datasets가 영상 데이터를 처리할 수 없기 때문에 스킵함."
-                )
+                print(f"{label_zip.filename}는 HF datasets가 영상 데이터를 처리할 수 없기 때문에 스킵함.")
                 continue
             file_type = get_file_type(label_zip.filename)
             file_name = Path(label_zip.filename).stem.split(")_")[-1]
@@ -257,9 +253,7 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         idx_counter = 0
         for label_prefix, label_zip in label_dict.items():
             source_zip = source_data_dict[label_prefix]
-            source_info_dict = {
-                info.filename.replace("/", ""): info for info in source_zip.filelist
-            }
+            source_info_dict = {info.filename.replace("/", ""): info for info in source_zip.filelist}
 
             for info in label_zip.filelist:
                 label_byte = label_zip.open(info).read()
@@ -280,13 +274,26 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
 
                 image_info = label.pop("images")[0]
 
-                label["id"] = image_info["id"]
-                label["height"] = image_info["height"]
-                label["width"] = image_info["width"]
-                label["file_name"] = image_info["file_name"]
-                label["image"] = image_byte
+                caption_ko_ls = [x["korean"] for x in label["annotations"]]
+                caption_en_ls = [x["english"] for x in label["annotations"]]
 
-                yield (idx_counter, label)
+                category = random.choice(label["categories"])
+
+                label["info"]["width"] = image_info["width"]
+                label["info"]["height"] = image_info["height"]
+                label["info"]["file_name"] = image_info["file_name"]
+                label["info"]["supercategory"] = category["supercategory"]
+                data = {
+                    "id": int(image_info["id"]),
+                    "image": image_byte,
+                    "caption": random.choice(caption_ko_ls),
+                    "caption_ls": caption_ko_ls,
+                    "category": category["name"],
+                    "en_caption": caption_en_ls,
+                    "metadata": label["info"],
+                }
+
+                yield (idx_counter, data)
                 idx_counter += 1
 
         return
@@ -320,9 +327,7 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         idx_counter = 0
         for label_prefix, label_zip in label_dict.items():
             source_zip = source_data_dict[label_prefix]
-            source_info_dict = {
-                info.filename.replace("/", ""): info for info in source_zip.filelist
-            }
+            source_info_dict = {info.filename.replace("/", ""): info for info in source_zip.filelist}
 
             for info in label_zip.filelist:
                 label_byte = label_zip.open(info).read()
