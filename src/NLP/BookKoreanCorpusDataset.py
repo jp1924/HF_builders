@@ -16,6 +16,7 @@ from datasets import (
     SplitGenerator,
     Value,
 )
+from kss import Kss
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -183,7 +184,29 @@ class BookKoreanCorpusDataset(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath: List[dict], split: str):
-        label_zip = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
+        split_sentences = Kss("split_sentences")
+        label_zip_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
 
-        breakpoint()
-        label_zip
+        idx = 0
+        for label_zip in label_zip_ls:
+            for file_info in label_zip.filelist:
+                if file_info.is_dir() or "TEXT" not in file_info.filename:
+                    continue
+
+                label_txt_file = label_zip.open(file_info).read().decode("utf-8")
+                labels = json.loads(label_txt_file)["paragraphs"]
+                for data_row in labels:
+                    corpus = " ".join([x["text"] for x in data_row["sentences"]])
+                    sentence_ls = [x.strip() for x in split_sentences(corpus)]
+
+                    data_row = {
+                        "id": data_row["id"],
+                        "corpus": corpus,
+                        "category": None,
+                        "sentence_ls": sentence_ls,
+                        "metadata": data_row["info"],
+                        "sentences": data_row["sentences"],
+                    }
+
+                    yield (idx, data_row)
+                    idx += 1
