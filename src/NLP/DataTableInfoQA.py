@@ -55,7 +55,7 @@ class DataTableInfoQA(GeneratorBasedBuilder):
                     "id": Value("string"),
                     "context": Value("string"),
                     "title": Value("string"),
-                    "labels": [
+                    "question_answer": [
                         {
                             "id": Value("string"),
                             "is_impossible": Value("bool"),
@@ -213,7 +213,7 @@ class DataTableInfoQA(GeneratorBasedBuilder):
                 "context": paragraphs["context"],
                 "id": paragraphs["context_id"],
                 "title": paragraphs["table_title"],
-                "labels": label_ls,
+                "question_answer": label_ls,
                 "metadata": {
                     "doc_id": data["doc_id"],
                     "doc_title": data["doc_title"],
