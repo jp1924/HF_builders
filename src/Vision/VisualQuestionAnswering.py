@@ -1,15 +1,26 @@
 import json
 import os
+import random
 from pathlib import Path
 from tarfile import TarFile
+from typing import List
 from zipfile import ZipFile
 
-import datasets
-import pandas as pd
 import requests
-from datasets import Features, Image, Value
+from datasets import (
+    BuilderConfig,
+    DatasetInfo,
+    Features,
+    GeneratorBasedBuilder,
+    Image,
+    Split,
+    SplitGenerator,
+    Value,
+    Version,
+)
 from natsort import natsorted
 from tqdm import tqdm
+
 
 _LICENSE = """
 AI 데이터 허브에서 제공되는 인공지능 학습용 데이터(이하 ‘AI데이터’라고 함)는 과학기술정보통신부와 한국지능정보사회진흥원의 「지능정보산업 인프라 조성」 사업의 일환으로 구축되었으며, 본 사업의 유‧무형적 결과물인 데이터, AI응용모델 및 데이터 저작도구의 소스, 각종 매뉴얼 등(이하 ‘AI데이터 등’)에 대한 일체의 권리는 AI데이터 등의 구축 수행기관 및 참여기관(이하 ‘수행기관 등’)과 한국지능정보사회진흥원에 있습니다.
@@ -19,30 +30,41 @@ AI 데이터 허브에서 제공되는 인공지능 학습용 데이터(이하 �
 
 _DESCRIPTION = """이미지와 이미지에 대한 질문과 대답으로 구성된 시각정보 기반 질의응답(Visual Question Answering, VQA) 데이터셋을 구축하여 시각정보 기반 질의응답 기술 연구의 학습용 데이터셋으로 활용 가능한 이미지 데이터 제공"""
 
+
 DATASET_KEY = "104"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
 _HOMEPAGE = (
     f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
 )
 
+_VERSION = Version("1.0.0")
+_DATANAME = "VisualQuestionAnswering"
+DATASET_SIZE = 85.03
 
-class VisualQuestionAnswering(datasets.GeneratorBasedBuilder):
-    VERSION = datasets.Version("1.0.0")
+
+class VisualQuestionAnswering(GeneratorBasedBuilder):
+    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
+    DEFAULT_CONFIG_NAME = "default"
+    VERSION = _VERSION
 
     def _info(self):
         features = Features(
             {
-                "question_id": Value("string"),
-                "image_id": Value("string"),
-                "multiple_choice_answer": Value("string"),
-                "answer_confidence": Value("string"),
-                "question": Value("string"),
-                "category": Value("string"),
+                "id": Value("string"),
                 "image": Image(),
+                "category": Value("string"),
+                "question_answer": [
+                    {
+                        "id": Value("string"),
+                        "question": Value("string"),
+                        "answer": Value("string"),
+                        "confidence": Value("bool"),
+                    }
+                ],
             }
         )
 
-        return datasets.DatasetInfo(
+        return DatasetInfo(
             description=_DESCRIPTION,
             features=features,
             supervised_keys=None,
@@ -51,7 +73,7 @@ class VisualQuestionAnswering(datasets.GeneratorBasedBuilder):
             citation=None,
         )
 
-    def aihub_downloader(self, recv_path: Path):
+    def aihub_downloader(self, destination_path: Path) -> None:
         aihub_id = os.getenv("AIHUB_ID", None)
         aihub_pass = os.getenv("AIHUB_PASS", None)
 
@@ -71,19 +93,27 @@ class VisualQuestionAnswering(datasets.GeneratorBasedBuilder):
             stream=True,
         )
 
-        if response.status_code != 200:
+        if response.status_code == 502:
+            raise BaseException(
+                "다운로드 서비스는 홈페이지(https://aihub.or.kr)에서 신청 및 승인 후 이용 가능 합니다."
+            )
+        elif response.status_code != 200:
             raise BaseException(f"Download failed with HTTP status code: {response.status_code}")
 
-        with open(recv_path, "wb") as file:
-            # chunk_size는 byte수
-            for chunk in tqdm(response.iter_content(chunk_size=1024)):
-                file.write(chunk)
+        data_file = open(destination_path, "wb")
+        downloaded_bytes = 0
+        with tqdm(total=round(DATASET_SIZE * 1024**2)) as pbar:
+            for chunk in response.iter_content(chunk_size=1024):
+                data_file.write(chunk)
+                downloaded_bytes += len(chunk)
 
-    def unzip_data(self, tar_file: Path, unzip_dir: Path) -> list:
-        with TarFile(tar_file, "r") as mytar:
-            mytar.extractall(unzip_dir)
-            os.remove(tar_file)
+                pbar.update(1)
+                prefix = f"Downloaded (GB): {downloaded_bytes / (1024**3):.4f}/{DATASET_SIZE}"
+                pbar.set_postfix_str(prefix)
 
+        data_file.close()
+
+    def concat_zip_part(self, unzip_dir: Path) -> None:
         part_glob = Path(unzip_dir).rglob("*.zip.part*")
 
         part_dict = dict()
@@ -101,34 +131,39 @@ class VisualQuestionAnswering(datasets.GeneratorBasedBuilder):
                     byte_f.write(part_path.read_bytes())
                     os.remove(part_path)
 
-        return list(unzip_dir.rglob("*.zip*"))
-
-    def _split_generators(self, dl_manager):
-        data_name = "Visual_Question_Answering"
+    def _split_generators(self, dl_manager) -> List[SplitGenerator]:  # type: ignore
         cache_dir = Path(dl_manager.download_config.cache_dir)
-        unzip_dir = cache_dir.joinpath(data_name)
+
+        unzip_dir = cache_dir.joinpath(_DATANAME)
+        tar_file = cache_dir.joinpath(f"{_DATANAME}.tar")
+
+        if tar_file.exists():
+            os.remove(tar_file)
 
         if not unzip_dir.exists():
-            tar_file = cache_dir.joinpath(f"{data_name}.tar")
             self.aihub_downloader(tar_file)
-            # 압축이 덜 출렸을 때를 고려해야 함.
-            zip_file_path = self.unzip_data(tar_file, unzip_dir)
-        else:
-            zip_file_path = list(unzip_dir.rglob("*.zip"))
+
+            with TarFile(tar_file, "r") as mytar:
+                mytar.extractall(unzip_dir)
+                os.remove(tar_file)
+
+            self.concat_zip_part(unzip_dir)
+
+        zip_file_path = list(unzip_dir.rglob("*.zip"))
 
         train_split = [x for x in zip_file_path if "Training" in str(x)]
         valid_split = [x for x in zip_file_path if "Validation" in str(x)]
 
         return [
-            datasets.SplitGenerator(
-                name=datasets.Split.TRAIN,
+            SplitGenerator(
+                name=Split.TRAIN,
                 gen_kwargs={
                     "filepath": train_split,
                     "split": "train",
                 },
             ),
-            datasets.SplitGenerator(
-                name=datasets.Split.VALIDATION,
+            SplitGenerator(
+                name=Split.VALIDATION,
                 gen_kwargs={
                     "filepath": valid_split,
                     "split": "validlidation",
@@ -137,6 +172,7 @@ class VisualQuestionAnswering(datasets.GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath, split):
+        random.seed(42)
         source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x)]
         label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
         info_dict = {
@@ -151,7 +187,7 @@ class VisualQuestionAnswering(datasets.GeneratorBasedBuilder):
                 category_dict[category] = []
             category_dict[category].append(x)
 
-        data_ls = list()
+        idx = 0
         for category, file_ls in category_dict.items():
             file_ls = [file for file in file_ls if not file.is_dir()]
 
@@ -163,30 +199,59 @@ class VisualQuestionAnswering(datasets.GeneratorBasedBuilder):
                     label_dict[_type] = []
 
                 label_dict[_type].append(file)
-
+            breakpoint()
             for _type, label_file in label_dict.items():
                 annotation = [x for x in label_file if "annotation.json" in x.filename][0]
                 images = [x for x in label_file if "images.json" in x.filename][0]
                 question = [x for x in label_file if "question.json" in x.filename][0]
 
-                annotation = json.loads(label_ls[0].open(annotation).read().decode("utf-8"))["annotations"]
-                images = json.loads(label_ls[0].open(images).read().decode("utf-8"))["images"]
-                question = json.loads(label_ls[0].open(question).read().decode("utf-8"))["questions"]
+                annotation_ls = json.loads(label_ls[0].open(annotation).read().decode("utf-8"))["annotations"]
+                images_ls = json.loads(label_ls[0].open(images).read().decode("utf-8"))["images"]
+                question_ls = json.loads(label_ls[0].open(question).read().decode("utf-8"))["questions"]
 
-                df_images = pd.DataFrame(images).set_index("image_id")
-                df_annotation = pd.DataFrame(annotation).set_index("question_id")
-                df_question = pd.DataFrame(question).set_index("question_id")
+                annotation_dict = dict()
+                for x in annotation_ls:
+                    if x["image_id"] not in annotation_dict:
+                        annotation_dict[x["image_id"]] = []
 
-                data = pd.merge(df_question, df_annotation, on="question_id")
-                data = data.rename(columns={"image_id_x": "image_id"}).drop(columns="image_id_y").reset_index()
-                data = pd.merge(df_images, data, on="image_id", how="outer")
+                    annotation_dict[x["image_id"]].append(x)
+                question_dict = dict()
+                for x in question_ls:
+                    if x["image_id"] not in question_dict:
+                        question_dict[x["image_id"]] = []
 
-                data_ls.append(data)
+                    question_dict[x["image_id"]].append(x)
 
-        idx = 0
-        for _, df in pd.concat(data_ls).iterrows():
-            df = dict(df)
-            df["image"] = source_dict[df["category"]].open(info_dict[df["image"]]).read()
+                if not (len(annotation_dict) == len(question_dict) == len(images_ls)):
+                    raise ValueError("(len(annotation_dict) == len(question_dict) == len(images_ls)) 갈아 언멎음")
 
-            yield (idx, df)
-            idx += 1
+                for image_row in images_ls:
+                    annotation = annotation_dict[image_row["image_id"]]
+                    question = question_dict[image_row["image_id"]]
+
+                    annotation = natsorted(annotation, key=lambda x: x["question_id"])
+                    question = natsorted(question, key=lambda x: x["question_id"])
+
+                    if len(annotation) != len(question):
+                        raise ValueError("len(annotation) != len(question) 길이 안맞음.")
+
+                    question_answer = list()
+                    for x, y in zip(question, annotation):
+                        question_answer.append(
+                            {
+                                "id": x["question_id"],
+                                "question": x["question"],
+                                "answer": y["multiple_choice_answer"],
+                                "confidence": True if y["answer_confidence"] == "yes" else False,
+                            }
+                        )
+
+                    data = {
+                        "id": image_row["image_id"],
+                        "image": source_dict[image_row["category"]].open(info_dict[image_row["image"]]).read(),
+                        "category": image_row["category"],
+                        "question_answer": question_answer,
+                    }
+
+                    yield (idx, data)
+                    idx += 1
