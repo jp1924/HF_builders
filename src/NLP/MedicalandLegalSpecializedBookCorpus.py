@@ -16,6 +16,7 @@ from datasets import (
     SplitGenerator,
     Value,
 )
+from kss import Kss
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -178,7 +179,30 @@ class MedicalandLegalSpecializedBookCorpus(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath: List[dict], split: str):
-        label_zip = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
+        split_sentences = Kss("split_sentences")
+        label_zip_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
 
-        breakpoint()
-        label_zip
+        idx = 0
+        for label_zip in label_zip_ls:
+            for file_info in label_zip.filelist:
+                label_txt_file = label_zip.open(file_info).read().decode("utf-8")
+                labels = json.loads(label_txt_file)["data"]
+
+                for data_row in labels:
+                    sentence_ls = [x.strip() for x in split_sentences(data_row["text"])]
+                    data_row = {
+                        "id": data_row["book_id"],
+                        "corpus": data_row["text"],
+                        "category": data_row["category"],
+                        "sentence_ls": sentence_ls,
+                        "metadata": {
+                            "publication_ymd": data_row["publication_ymd"],
+                            "word_segment": data_row["word_segment"],
+                            "popularity": data_row["popularity"],
+                            "keyword": data_row["keyword"],
+                        },
+                        "NE": data_row["NE"],
+                    }
+
+                    yield (idx, data_row)
+                    idx += 1
