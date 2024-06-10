@@ -115,7 +115,7 @@ class KoCC3M(GeneratorBasedBuilder):
 
                     response.raise_for_status()
                     img_bytes = BytesIO(response.content)
-                    PIL_Image.open(img_bytes)
+                    PIL_Image.open(img_bytes).load()
                 except WarningAsException as e:
                     logging.info(f"{url} is warning and skip")
                     continue
