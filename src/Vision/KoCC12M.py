@@ -1,7 +1,8 @@
 import logging
 from io import BytesIO
+import warnings
 
-import PIL
+from PIL import Image as PIL_Image
 import requests
 from datasets import (
     DatasetInfo,
@@ -34,8 +35,14 @@ _URLs = {
 }
 
 
-setproctitle("KoCC3M_builder")
+setproctitle("KoCC12M_builder")
 
+class WarningAsException(Exception):
+    pass
+
+
+def warning_to_exception(message, category, filename, lineno, file=None, line=None):
+    raise WarningAsException(message)
 
 class KoCC12M(GeneratorBasedBuilder):
     VERSION = Version("1.0.0")
@@ -71,6 +78,8 @@ class KoCC12M(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath, split):
+        warnings.showwarning = warning_to_exception
+        
         def download_img(example):
             url_ls = example["url"]
             url_ls = url_ls = url_ls if isinstance(url_ls, list) else [url_ls]
@@ -98,13 +107,17 @@ class KoCC12M(GeneratorBasedBuilder):
                     if response.status_code != 200:
                         logging.info(f"{url} is skip")
                         continue
+
                     response.raise_for_status()
                     img_bytes = BytesIO(response.content)
-                    PIL.Image.open(img_bytes)
+                    PIL_Image.open(img_bytes).load()
+                except WarningAsException as e:
+                    logging.info(f"{url} is warning and skip")
+                    continue
                 except:
                     logging.info(f"{url} is skip")
                     continue
-                data["image"].append(img_bytes.read())
+                data["image"].append(PIL_Image.open(BytesIO(response.content)))
                 data["caption"].append(korean_caption)
                 data["caption_ls"].append([korean_caption])
                 data["category"].append(None)
