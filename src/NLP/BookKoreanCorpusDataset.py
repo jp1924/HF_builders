@@ -68,7 +68,7 @@ class BookKoreanCorpusDataset(GeneratorBasedBuilder):
                         "original_text": Value("string"),
                         "char_count": Value("int32"),
                         "word_count": Value("int32"),
-                        "noise_ratio": Value("int32"),
+                        "noise_ratio": Value("float32"),
                         "id": Value("string"),
                     },
                 ],
