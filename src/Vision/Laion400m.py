@@ -19,6 +19,8 @@ from datasets import (
 from PIL import Image as PIL_Image
 
 
+logging.basicConfig(filename="Laion400m_download_fail.log", level=logging.INFO)
+
 URLS = {
     "part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
     "part-00001-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00001-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
@@ -54,6 +56,10 @@ URLS = {
     "part-00031-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00031-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
 }
 
+_HOMEPAGE = "https://laion.ai/blog/laion-400-open-dataset/"
+_LICENSE = "We distribute the metadata dataset (the parquet files) under the most open Creative Common CC-BY 4.0 license, which poses no particular restriction. The images are under their copyright."
+_CITATION = """Schuhmann, C., Vencu, R., Beaumont, R., Kaczmarczyk, R., Mullis, C., Katta, A., Coombes, T., Jitsev, J., & Komatsuzaki, A. (2021). LAION-400M: Open Dataset of CLIP-Filtered 400 Million Image-Text Pairs. arXiv. https://doi.org/10.48550/arXiv.2111.02114"""
+_DESCRIPTION = """Multi-modal language-vision models trained on hundreds of millions of image-text pairs (e.g. CLIP, DALL-E) gained a recent surge, showing remarkable capability to perform zero- or few-shot learning and transfer even in absence of per-sample labels on target image data. Despite this trend, to date there has been no publicly available datasets of sufficient scale for training such models from scratch. To address this issue, in a community effort we build and release for public LAION-400M, a dataset with CLIP-filtered 400 million image-text pairs, their CLIP embeddings and kNN indices that allow efficient similarity search."""
 _VERSION = Version("1.0.0")
 
 
@@ -85,9 +91,12 @@ class Laion400m(GeneratorBasedBuilder):
         )
 
         return DatasetInfo(
+            description=_DESCRIPTION,
             features=features,
-            supervised_keys=None,
-            citation=None,
+            homepage=_HOMEPAGE,
+            license=_LICENSE,
+            citation=_CITATION,
+            version=_VERSION,
         )
 
     def _split_generators(self, dl_manager):
@@ -111,10 +120,8 @@ class Laion400m(GeneratorBasedBuilder):
             url_ls = example["URL"]
             url_ls = url_ls = url_ls if isinstance(url_ls, list) else [url_ls]
 
-            korean_caption_ls = example["TEXT"]
-            korean_caption_ls = korean_caption_ls = (
-                korean_caption_ls if isinstance(korean_caption_ls, list) else [korean_caption_ls]
-            )
+            text_ls = example["TEXT"]
+            text_ls = text_ls = text_ls if isinstance(text_ls, list) else [text_ls]
 
             license_ls = example["LICENSE"]
             license_ls = license_ls = license_ls if isinstance(license_ls, list) else [license_ls]
@@ -135,12 +142,12 @@ class Laion400m(GeneratorBasedBuilder):
                 "nsfw": [],
                 "similarity": [],
             }
-            iter_zip = zip(sample_id_ls, url_ls, korean_caption_ls, license_ls, nsfw_ls, similarity_ls)
-            for sample_id, url, korean_caption, license, nsfw, similarity in iter_zip:
+            iter_zip = zip(sample_id_ls, url_ls, text_ls, license_ls, nsfw_ls, similarity_ls)
+            for sample_id, url, text, license, nsfw, similarity in iter_zip:
                 try:
                     response = requests.get(url, timeout=5)
                     if response.status_code != 200:
-                        logging.info(f"{url} is skip")
+                        logging.info(f"{sample_id} is skip")
                         continue
 
                     img_bytes = BytesIO(response.content)
@@ -148,18 +155,18 @@ class Laion400m(GeneratorBasedBuilder):
                     # 그리고 warning이 뜨면 error가 나도록 만들어 놨는데 정상 동작하는지 테스트는 안했음.
                     PIL_Image.open(img_bytes).load()
                 except WarningAsException as e:
-                    logging.info(f"{url} is warning and skip")
+                    logging.info(f"{sample_id} is warning and skip")
                     continue
                 except:
-                    logging.info(f"{url} is skip")
+                    logging.info(f"{sample_id} is skip")
                     continue
 
                 image = PIL_Image.open(BytesIO(response.content))
 
                 data["id"].append(sample_id)
                 data["image"].append(image)
-                data["caption"].append(korean_caption)
-                data["caption_ls"].append([korean_caption])
+                data["caption"].append(text)
+                data["caption_ls"].append([text])
                 data["category"].append(None)
                 data["license"].append(license)
                 data["nsfw"].append(nsfw)
@@ -173,12 +180,17 @@ class Laion400m(GeneratorBasedBuilder):
             dataset = load_dataset("parquet", data_files=[parquet_path], split="train")
 
             parquet_path = Path(parquet_path)
-            cache_file_path = parquet_path.parent.joinpath(f"Laion400m-{idx}_cache_file.arrow")
+            cache_file_path = parquet_path.parent.joinpath("Laion400m_cache_file", f"Laion400m-{idx}_cache_file.arrow")
+
+            if not cache_file_path.parent.exists():
+                print(f"mkdir Laion400m_cache_file at {cache_file_path.parent}")
+                cache_file_path.parent.mkdir()
+
             dataset = dataset.map(
                 download_img,
-                num_proc=2,
+                num_proc=40,
                 batched=True,
-                batch_size=1000,
+                batch_size=10,
                 load_from_cache_file=True,
                 desc=f"Laion400m-{idx}",
                 with_rank=True,

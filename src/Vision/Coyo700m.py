@@ -19,7 +19,7 @@ from datasets import (
 from PIL import Image as PIL_Image
 
 
-URL = {
+URLS = {
     "part-00000-17da4908-939c-46e5-91d0-15f256041956-c000": "https://huggingface.co/datasets/kakaobrain/coyo-700m/resolve/main/data/part-00000-17da4908-939c-46e5-91d0-15f256041956-c000.snappy.parquet?download=true",
     "part-00001-17da4908-939c-46e5-91d0-15f256041956-c000": "https://huggingface.co/datasets/kakaobrain/coyo-700m/resolve/main/data/part-00001-17da4908-939c-46e5-91d0-15f256041956-c000.snappy.parquet?download=true",
     "part-00002-17da4908-939c-46e5-91d0-15f256041956-c000": "https://huggingface.co/datasets/kakaobrain/coyo-700m/resolve/main/data/part-00002-17da4908-939c-46e5-91d0-15f256041956-c000.snappy.parquet?download=true",
@@ -72,7 +72,15 @@ URL = {
 }
 
 
-PATH = "https://huggingface.co/datasets/kakaobrain/coyo-700m"
+_HOMEPAGE = "https://huggingface.co/datasets/kakaobrain/coyo-700m"
+_LICENSE = "The COYO dataset of Kakao Brain is licensed under CC-BY-4.0 License. The full license can be found in the LICENSE.cc-by-4.0 file. The dataset includes “Image URL” and “Text” collected from various sites by analyzing Common Crawl data, an open data web crawling project. The collected data (images and text) is subject to the license to which each content belongs."
+_CITATION="""@misc{kakaobrain2022coyo-700m,
+  title         = {COYO-700M: Image-Text Pair Dataset},
+  author        = {Byeon, Minwoo and Park, Beomhee and Kim, Haecheon and Lee, Sungjun and Baek, Woonhyuk and Kim, Saehoon},
+  year          = {2022},
+  howpublished  = {\url{https://github.com/kakaobrain/coyo-dataset}},
+}"""
+_DESCRIPTION="""COYO-700M is a large-scale dataset that contains 747M image-text pairs as well as many other meta-attributes to increase the usability to train various models. Our dataset follows a similar strategy to previous vision-and-language datasets, collecting many informative pairs of alt-text and its associated image in HTML documents. We expect COYO to be used to train popular large-scale foundation models complementary to other similar datasets."""
 _VERSION = Version("1.0.0")
 
 
@@ -87,7 +95,6 @@ def warning_to_exception(message, category, filename, lineno, file=None, line=No
 class Coyo400m(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
     DEFAULT_CONFIG_NAME = "default"
-    VERSION = _VERSION
 
     def _info(self):
         features = Features(
@@ -97,16 +104,21 @@ class Coyo400m(GeneratorBasedBuilder):
                 "caption": Value("string"),
                 "caption_ls": [Value("string")],
                 "category": Value("string"),
-                "license": Value("string"),
-                "nsfw": Value("string"),
-                "similarity": Value("float"),
+                "num_faces": Value("int32"),
+                "nsfw_score": Value("float32"),
+                "similarity": Value("float32"),
+                "watermark_score": Value("float32"),
+                "aesthetic_score": Value("float32"),
             }
         )
 
         return DatasetInfo(
+            description=_DESCRIPTION,
             features=features,
-            supervised_keys=None,
-            citation=None,
+            homepage=_HOMEPAGE,
+            license=_LICENSE,
+            citation=_CITATION,
+            version=_VERSION,
         )
 
     def _split_generators(self, dl_manager):
@@ -124,25 +136,29 @@ class Coyo400m(GeneratorBasedBuilder):
 
     def _generate_examples(self, filepath, split):
         def download_img(example, rank):
-            sample_id_ls = example["SAMPLE_ID"]
+            sample_id_ls = example["id"]
             sample_id_ls = sample_id_ls = sample_id_ls if isinstance(sample_id_ls, list) else [sample_id_ls]
 
-            url_ls = example["URL"]
+            url_ls = example["url"]
             url_ls = url_ls = url_ls if isinstance(url_ls, list) else [url_ls]
 
-            korean_caption_ls = example["TEXT"]
-            korean_caption_ls = korean_caption_ls = (
-                korean_caption_ls if isinstance(korean_caption_ls, list) else [korean_caption_ls]
-            )
+            text_ls = example["text"]
+            text_ls = text_ls = text_ls if isinstance(text_ls, list) else [text_ls]
 
-            license_ls = example["LICENSE"]
-            license_ls = license_ls = license_ls if isinstance(license_ls, list) else [license_ls]
+            num_faces_ls = example["num_faces"]
+            num_faces_ls = num_faces_ls = num_faces_ls if isinstance(num_faces_ls, list) else [num_faces_ls]
 
-            nsfw_ls = example["NSFW"]
+            nsfw_ls = example["nsfw_score_gantman"]
             nsfw_ls = nsfw_ls = nsfw_ls if isinstance(nsfw_ls, list) else [nsfw_ls]
 
-            similarity_ls = example["similarity"]
+            similarity_ls = example["clip_similarity_vitl14"]
             similarity_ls = similarity_ls = similarity_ls if isinstance(similarity_ls, list) else [similarity_ls]
+
+            watermark_ls = example["watermark_score"]
+            watermark_ls = watermark_ls = watermark_ls if isinstance(watermark_ls, list) else [watermark_ls]
+
+            aesthetic_ls = example["aesthetic_score_laion_v2"]
+            aesthetic_ls = aesthetic_ls = aesthetic_ls if isinstance(aesthetic_ls, list) else [aesthetic_ls]
 
             data = {
                 "id": [],
@@ -150,16 +166,18 @@ class Coyo400m(GeneratorBasedBuilder):
                 "caption": [],
                 "caption_ls": [],
                 "category": [],
-                "license": [],
-                "nsfw": [],
+                "num_faces": [],
+                "nsfw_score": [],
                 "similarity": [],
+                "watermark_score": [],
+                "aesthetic_score": [],
             }
-            iter_zip = zip(sample_id_ls, url_ls, korean_caption_ls, license_ls, nsfw_ls, similarity_ls)
-            for sample_id, url, korean_caption, license, nsfw, similarity in iter_zip:
+            iter_zip = zip(sample_id_ls, url_ls, text_ls, num_faces_ls, nsfw_ls, similarity_ls, watermark_ls, aesthetic_ls)
+            for sample_id, url, text, num_faces, nsfw, similarity, watermark, aesthetic in iter_zip:
                 try:
                     response = requests.get(url, timeout=5)
                     if response.status_code != 200:
-                        logging.info(f"{url} is skip")
+                        logging.info(f"{sample_id} is skip")
                         continue
 
                     img_bytes = BytesIO(response.content)
@@ -167,22 +185,24 @@ class Coyo400m(GeneratorBasedBuilder):
                     # 그리고 warning이 뜨면 error가 나도록 만들어 놨는데 정상 동작하는지 테스트는 안했음.
                     PIL_Image.open(img_bytes).load()
                 except WarningAsException as e:
-                    logging.info(f"{url} is warning and skip")
+                    logging.info(f"{sample_id} is warning and skip")
                     continue
                 except:
-                    logging.info(f"{url} is skip")
+                    logging.info(f"{sample_id} is skip")
                     continue
 
                 image = PIL_Image.open(BytesIO(response.content))
 
                 data["id"].append(sample_id)
                 data["image"].append(image)
-                data["caption"].append(korean_caption)
-                data["caption_ls"].append([korean_caption])
+                data["caption"].append(text)
+                data["caption_ls"].append([text])
                 data["category"].append(None)
-                data["license"].append(license)
-                data["nsfw"].append(nsfw)
+                data["num_faces"].append(num_faces)
+                data["nsfw_score"].append(nsfw)
                 data["similarity"].append(similarity)
+                data["watermark_score"].append(watermark)
+                data["aesthetic_score"].append(aesthetic)
 
             return data
 
@@ -192,14 +212,19 @@ class Coyo400m(GeneratorBasedBuilder):
             dataset = load_dataset("parquet", data_files=[parquet_path], split="train")
 
             parquet_path = Path(parquet_path)
-            cache_file_path = parquet_path.parent.joinpath(f"Laion400m-{idx}_cache_file.arrow")
+            cache_file_path = parquet_path.parent.joinpath("coyo700m_cache_file", f"coyo700m-{idx}_cache_file.arrow")
+
+            if not cache_file_path.parent.exists():
+                print(f"mkdir coyo700m_cache_file at {cache_file_path.parent}")
+                cache_file_path.parent.mkdir()
+
             dataset = dataset.map(
                 download_img,
-                num_proc=2,
+                num_proc=40,
                 batched=True,
-                batch_size=1000,
+                batch_size=10,
                 load_from_cache_file=True,
-                desc=f"Laion400m-{idx}",
+                desc=f"Coyo400m-{idx}",
                 with_rank=True,
                 cache_file_name=str(cache_file_path),
                 remove_columns=dataset.column_names,
