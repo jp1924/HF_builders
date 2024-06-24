@@ -74,13 +74,13 @@ URLS = {
 
 _HOMEPAGE = "https://huggingface.co/datasets/kakaobrain/coyo-700m"
 _LICENSE = "The COYO dataset of Kakao Brain is licensed under CC-BY-4.0 License. The full license can be found in the LICENSE.cc-by-4.0 file. The dataset includes “Image URL” and “Text” collected from various sites by analyzing Common Crawl data, an open data web crawling project. The collected data (images and text) is subject to the license to which each content belongs."
-_CITATION="""@misc{kakaobrain2022coyo-700m,
+_CITATION = """@misc{kakaobrain2022coyo-700m,
   title         = {COYO-700M: Image-Text Pair Dataset},
   author        = {Byeon, Minwoo and Park, Beomhee and Kim, Haecheon and Lee, Sungjun and Baek, Woonhyuk and Kim, Saehoon},
   year          = {2022},
-  howpublished  = {\url{https://github.com/kakaobrain/coyo-dataset}},
+  howpublished  = {\\url{https://github.com/kakaobrain/coyo-dataset}},
 }"""
-_DESCRIPTION="""COYO-700M is a large-scale dataset that contains 747M image-text pairs as well as many other meta-attributes to increase the usability to train various models. Our dataset follows a similar strategy to previous vision-and-language datasets, collecting many informative pairs of alt-text and its associated image in HTML documents. We expect COYO to be used to train popular large-scale foundation models complementary to other similar datasets."""
+_DESCRIPTION = """COYO-700M is a large-scale dataset that contains 747M image-text pairs as well as many other meta-attributes to increase the usability to train various models. Our dataset follows a similar strategy to previous vision-and-language datasets, collecting many informative pairs of alt-text and its associated image in HTML documents. We expect COYO to be used to train popular large-scale foundation models complementary to other similar datasets."""
 _VERSION = Version("1.0.0")
 
 
@@ -172,7 +172,9 @@ class Coyo400m(GeneratorBasedBuilder):
                 "watermark_score": [],
                 "aesthetic_score": [],
             }
-            iter_zip = zip(sample_id_ls, url_ls, text_ls, num_faces_ls, nsfw_ls, similarity_ls, watermark_ls, aesthetic_ls)
+            iter_zip = zip(
+                sample_id_ls, url_ls, text_ls, num_faces_ls, nsfw_ls, similarity_ls, watermark_ls, aesthetic_ls
+            )
             for sample_id, url, text, num_faces, nsfw, similarity, watermark, aesthetic in iter_zip:
                 try:
                     response = requests.get(url, timeout=5)
