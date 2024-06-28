@@ -20,6 +20,7 @@ from PIL import Image as PIL_Image
 
 
 logging.basicConfig(filename="Laion400m_download_fail.log", level=logging.INFO)
+warnings.filterwarnings("error")
 
 URLS = {
     "part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
@@ -61,14 +62,6 @@ _LICENSE = "We distribute the metadata dataset (the parquet files) under the mos
 _CITATION = """Schuhmann, C., Vencu, R., Beaumont, R., Kaczmarczyk, R., Mullis, C., Katta, A., Coombes, T., Jitsev, J., & Komatsuzaki, A. (2021). LAION-400M: Open Dataset of CLIP-Filtered 400 Million Image-Text Pairs. arXiv. https://doi.org/10.48550/arXiv.2111.02114"""
 _DESCRIPTION = """Multi-modal language-vision models trained on hundreds of millions of image-text pairs (e.g. CLIP, DALL-E) gained a recent surge, showing remarkable capability to perform zero- or few-shot learning and transfer even in absence of per-sample labels on target image data. Despite this trend, to date there has been no publicly available datasets of sufficient scale for training such models from scratch. To address this issue, in a community effort we build and release for public LAION-400M, a dataset with CLIP-filtered 400 million image-text pairs, their CLIP embeddings and kNN indices that allow efficient similarity search."""
 _VERSION = Version("1.0.0")
-
-
-class WarningAsException(Exception):
-    pass
-
-
-def warning_to_exception(message, category, filename, lineno, file=None, line=None):
-    raise WarningAsException(message)
 
 
 class Laion400m(GeneratorBasedBuilder):
@@ -153,15 +146,25 @@ class Laion400m(GeneratorBasedBuilder):
                     img_bytes = BytesIO(response.content)
                     # 종종 byte가 다운 받아져도 열리지 않는 깨진 이미지가 다운 받아지는 경우가 있음
                     # 그리고 warning이 뜨면 error가 나도록 만들어 놨는데 정상 동작하는지 테스트는 안했음.
-                    PIL_Image.open(img_bytes).load()
-                except WarningAsException as e:
-                    logging.info(f"{sample_id} is warning and skip")
-                    continue
+                    img = PIL_Image.open(img_bytes)
+                    img.load()
+                    img.verify()
+
+                    if img.format not in ["JPEG", "PNG", "WebP"]:
+                        raise ValueError()
+
+                    # 10 이하의 이미지들은 대부분 다 필터링 하도록 만듬.
+                    if img.width < 10 or img.height < 10:
+                        raise ValueError()
+
+                    if not (text or sample_id):
+                        raise ValueError()
+
                 except:
                     logging.info(f"{sample_id} is skip")
                     continue
 
-                image = PIL_Image.open(BytesIO(response.content))
+                image = PIL_Image.open(BytesIO(response.content)).convert("RGB")
 
                 data["id"].append(sample_id)
                 data["image"].append(image)
@@ -175,7 +178,6 @@ class Laion400m(GeneratorBasedBuilder):
             return data
 
         idx_ = 0
-        warnings.showwarning = warning_to_exception
         for idx, parquet_path in enumerate(filepath.values()):
             dataset = load_dataset("parquet", data_files=[parquet_path], split="train")
 
@@ -188,7 +190,7 @@ class Laion400m(GeneratorBasedBuilder):
 
             dataset = dataset.map(
                 download_img,
-                num_proc=40,
+                num_proc=30,
                 batched=True,
                 batch_size=10,
                 load_from_cache_file=True,
