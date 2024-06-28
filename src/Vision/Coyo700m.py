@@ -20,6 +20,7 @@ from PIL import Image as PIL_Image
 
 
 logging.basicConfig(filename="Coyo400m_download_fail.log", level=logging.INFO)
+warnings.filterwarnings("error")
 
 URLS = {
     "part-00000-17da4908-939c-46e5-91d0-15f256041956-c000": "https://huggingface.co/datasets/kakaobrain/coyo-700m/resolve/main/data/part-00000-17da4908-939c-46e5-91d0-15f256041956-c000.snappy.parquet?download=true",
@@ -84,14 +85,6 @@ _CITATION = """@misc{kakaobrain2022coyo-700m,
 }"""
 _DESCRIPTION = """COYO-700M is a large-scale dataset that contains 747M image-text pairs as well as many other meta-attributes to increase the usability to train various models. Our dataset follows a similar strategy to previous vision-and-language datasets, collecting many informative pairs of alt-text and its associated image in HTML documents. We expect COYO to be used to train popular large-scale foundation models complementary to other similar datasets."""
 _VERSION = Version("1.0.0")
-
-
-class WarningAsException(Exception):
-    pass
-
-
-def warning_to_exception(message, category, filename, lineno, file=None, line=None):
-    raise WarningAsException(message)
 
 
 class Coyo400m(GeneratorBasedBuilder):
@@ -187,10 +180,20 @@ class Coyo400m(GeneratorBasedBuilder):
                     img_bytes = BytesIO(response.content)
                     # 종종 byte가 다운 받아져도 열리지 않는 깨진 이미지가 다운 받아지는 경우가 있음
                     # 그리고 warning이 뜨면 error가 나도록 만들어 놨는데 정상 동작하는지 테스트는 안했음.
-                    PIL_Image.open(img_bytes).load()
-                except WarningAsException as e:
-                    logging.info(f"{sample_id} is warning and skip")
-                    continue
+                    img = PIL_Image.open(img_bytes)
+                    img.load()
+                    img.verify()
+
+                    if img.format not in ["JPEG", "PNG", "WebP"]:
+                        raise ValueError()
+
+                    # 10 이하의 이미지들은 대부분 다 필터링 하도록 만듬.
+                    if img.width < 10 or img.height < 10:
+                        raise ValueError()
+
+                    if not (text or sample_id):
+                        raise ValueError()
+
                 except:
                     logging.info(f"{sample_id} is skip")
                     continue
@@ -211,7 +214,6 @@ class Coyo400m(GeneratorBasedBuilder):
             return data
 
         idx_ = 0
-        warnings.showwarning = warning_to_exception
         for idx, parquet_path in enumerate(filepath.values()):
             dataset = load_dataset("parquet", data_files=[parquet_path], split="train")
 
