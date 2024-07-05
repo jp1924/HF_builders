@@ -1,9 +1,8 @@
 import logging
-import warnings
 from io import BytesIO
 from pathlib import Path
 
-import requests
+import pyarrow as pa
 from datasets import (
     BuilderConfig,
     DatasetInfo,
@@ -16,11 +15,10 @@ from datasets import (
     Version,
     load_dataset,
 )
+from img2dataset.downloader import download_image_with_retry
+from img2dataset.resizer import Resizer
 from PIL import Image as PIL_Image
 
-
-logging.basicConfig(filename="Coyo400m_download_fail.log", level=logging.INFO)
-warnings.filterwarnings("error")
 
 URLS = {
     "part-00000-17da4908-939c-46e5-91d0-15f256041956-c000": "https://huggingface.co/datasets/kakaobrain/coyo-700m/resolve/main/data/part-00000-17da4908-939c-46e5-91d0-15f256041956-c000.snappy.parquet?download=true",
@@ -87,7 +85,7 @@ _DESCRIPTION = """COYO-700M is a large-scale dataset that contains 747M image-te
 _VERSION = Version("1.0.0")
 
 
-class Coyo400m(GeneratorBasedBuilder):
+class Coyo700m(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
     DEFAULT_CONFIG_NAME = "default"
 
@@ -99,11 +97,20 @@ class Coyo400m(GeneratorBasedBuilder):
                 "caption": Value("string"),
                 "caption_ls": [Value("string")],
                 "category": Value("string"),
+                "width": Value("int32"),
+                "height": Value("int32"),
+                "image_phash": Value("string"),
+                "text_length": Value("int32"),
+                "word_count": Value("int32"),
+                "num_tokens_bert": Value("int32"),
+                "num_tokens_gpt": Value("int32"),
                 "num_faces": Value("int32"),
-                "nsfw_score": Value("float32"),
-                "similarity": Value("float32"),
+                "clip_similarity_vitb32": Value("float32"),
+                "clip_similarity_vitl14": Value("float32"),
+                "nsfw_score_opennsfw2": Value("float32"),
+                "nsfw_score_gantman": Value("float32"),
                 "watermark_score": Value("float32"),
-                "aesthetic_score": Value("float32"),
+                "aesthetic_score_laion_v2": Value("float32"),
             }
         )
 
@@ -130,88 +137,135 @@ class Coyo400m(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath, split):
-        def download_img(example, rank):
-            sample_id_ls = example["id"]
-            sample_id_ls = sample_id_ls = sample_id_ls if isinstance(sample_id_ls, list) else [sample_id_ls]
-
-            url_ls = example["url"]
-            url_ls = url_ls = url_ls if isinstance(url_ls, list) else [url_ls]
-
-            text_ls = example["text"]
-            text_ls = text_ls = text_ls if isinstance(text_ls, list) else [text_ls]
-
-            num_faces_ls = example["num_faces"]
-            num_faces_ls = num_faces_ls = num_faces_ls if isinstance(num_faces_ls, list) else [num_faces_ls]
-
-            nsfw_ls = example["nsfw_score_gantman"]
-            nsfw_ls = nsfw_ls = nsfw_ls if isinstance(nsfw_ls, list) else [nsfw_ls]
-
-            similarity_ls = example["clip_similarity_vitl14"]
-            similarity_ls = similarity_ls = similarity_ls if isinstance(similarity_ls, list) else [similarity_ls]
-
-            watermark_ls = example["watermark_score"]
-            watermark_ls = watermark_ls = watermark_ls if isinstance(watermark_ls, list) else [watermark_ls]
-
-            aesthetic_ls = example["aesthetic_score_laion_v2"]
-            aesthetic_ls = aesthetic_ls = aesthetic_ls if isinstance(aesthetic_ls, list) else [aesthetic_ls]
-
-            data = {
-                "id": [],
-                "image": [],
-                "caption": [],
-                "caption_ls": [],
-                "category": [],
-                "num_faces": [],
-                "nsfw_score": [],
-                "similarity": [],
-                "watermark_score": [],
-                "aesthetic_score": [],
-            }
-            iter_zip = zip(
-                sample_id_ls, url_ls, text_ls, num_faces_ls, nsfw_ls, similarity_ls, watermark_ls, aesthetic_ls
+        def image_downloader(example):
+            breakpoint()
+            (
+                sample_id_ls,
+                url_ls,
+                text_ls,
+                width_ls,
+                height_ls,
+                image_phash_ls,
+                text_length_ls,
+                word_count_ls,
+                num_tokens_bert_ls,
+                num_tokens_gpt_ls,
+                num_faces_ls,
+                clip_similarity_vitb32_ls,
+                clip_similarity_vitl14_ls,
+                nsfw_score_opennsfw2_ls,
+                nsfw_score_gantman_ls,
+                watermark_score_ls,
+                aesthetic_score_laion_v2_ls,
+            ) = (
+                example["id"],
+                example["url"],
+                example["text"],
+                example["width"],
+                example["height"],
+                example["image_phash"],
+                example["text_length"],
+                example["word_count"],
+                example["num_tokens_bert"],
+                example["num_tokens_gpt"],
+                example["num_faces"],
+                example["clip_similarity_vitb32"],
+                example["clip_similarity_vitl14"],
+                example["nsfw_score_opennsfw2"],
+                example["nsfw_score_gantman"],
+                example["watermark_score"],
+                example["aesthetic_score_laion_v2"],
             )
-            for sample_id, url, text, num_faces, nsfw, similarity, watermark, aesthetic in iter_zip:
-                try:
-                    response = requests.get(url, timeout=5)
-                    if response.status_code != 200:
-                        logging.info(f"{sample_id} is skip")
-                        continue
+            finish_data_ls = list()
+            coyo_zip = zip(
+                sample_id_ls,
+                url_ls,
+                text_ls,
+                width_ls,
+                height_ls,
+                image_phash_ls,
+                text_length_ls,
+                word_count_ls,
+                num_tokens_bert_ls,
+                num_tokens_gpt_ls,
+                num_faces_ls,
+                clip_similarity_vitb32_ls,
+                clip_similarity_vitl14_ls,
+                nsfw_score_opennsfw2_ls,
+                nsfw_score_gantman_ls,
+                watermark_score_ls,
+                aesthetic_score_laion_v2_ls,
+            )
+            for (
+                sample_id,
+                url,
+                text,
+                width,
+                height,
+                image_phash,
+                text_length,
+                word_count,
+                num_tokens_bert,
+                num_tokens_gpt,
+                num_faces,
+                clip_similarity_vitb32,
+                clip_similarity_vitl14,
+                nsfw_score_opennsfw2,
+                nsfw_score_gantman,
+                watermark_score,
+                aesthetic_score_laion_v2,
+            ) in coyo_zip:
+                idx, io_stream, err = download_image_with_retry(
+                    (sample_id, url),
+                    timeout=5,
+                    retries=2,
+                    user_agent_token=None,
+                    disallowed_header_directives=False,
+                )
+                if err:
+                    continue
+                img_bytes, _, _, orig_height, orig_width, err = resizer(io_stream)
+                if height != orig_height or width != orig_width:
+                    continue
+                elif err:
+                    continue
+                pil_image = PIL_Image.open(BytesIO(img_bytes))
+                pil_image.load()
+                pil_image.verify()
 
-                    img_bytes = BytesIO(response.content)
-                    # 종종 byte가 다운 받아져도 열리지 않는 깨진 이미지가 다운 받아지는 경우가 있음
-                    # 그리고 warning이 뜨면 error가 나도록 만들어 놨는데 정상 동작하는지 테스트는 안했음.
-                    img = PIL_Image.open(img_bytes)
-                    img.load()
-                    img.verify()
-
-                    if img.format not in ["JPEG", "PNG", "WebP"]:
-                        raise ValueError()
-
-                    # 10 이하의 이미지들은 대부분 다 필터링 하도록 만듬.
-                    if img.width < 10 or img.height < 10:
-                        raise ValueError()
-
-                    if not (text or sample_id):
-                        raise ValueError()
-
-                except:
-                    logging.info(f"{sample_id} is skip")
+                if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
                     continue
 
-                image = PIL_Image.open(BytesIO(response.content))
+                data = {
+                    "id": sample_id,
+                    "image": img_bytes,
+                    "caption": text,
+                    "caption_ls": [text],
+                    "category": None,
+                    "height": height,
+                    "width": width,
+                    "image_phash": image_phash,
+                    "text_length": text_length,
+                    "word_count": word_count,
+                    "num_tokens_bert": num_tokens_bert,
+                    "num_tokens_gpt": num_tokens_gpt,
+                    "num_faces": num_faces,
+                    "clip_similarity_vitb32": clip_similarity_vitb32,
+                    "clip_similarity_vitl14": clip_similarity_vitl14,
+                    "nsfw_score_opennsfw2": nsfw_score_opennsfw2,
+                    "nsfw_score_gantman": nsfw_score_gantman,
+                    "watermark_score": watermark_score,
+                    "aesthetic_score_laion_v2": aesthetic_score_laion_v2,
+                }
+                finish_data_ls.append(data)
+            return pa.Table.from_pylist(finish_data_ls)
 
-                data["id"].append(sample_id)
-                data["image"].append(image)
-                data["caption"].append(text)
-                data["caption_ls"].append([text])
-                data["category"].append(None)
-                data["num_faces"].append(num_faces)
-                data["nsfw_score"].append(nsfw)
-                data["similarity"].append(similarity)
-                data["watermark_score"].append(watermark)
-                data["aesthetic_score"].append(aesthetic)
-
-            return data
+        resizer = Resizer(
+            image_size=256,
+            resize_mode="no",
+            min_image_size=10,
+            resize_only_if_bigger=False,
+        )
 
         idx_ = 0
         for idx, parquet_path in enumerate(filepath.values()):
@@ -225,13 +279,12 @@ class Coyo400m(GeneratorBasedBuilder):
                 cache_file_path.parent.mkdir()
 
             dataset = dataset.map(
-                download_img,
-                num_proc=40,
+                image_downloader,
+                num_proc=1,
                 batched=True,
                 batch_size=10,
                 load_from_cache_file=True,
-                desc=f"Coyo400m-{idx}",
-                with_rank=True,
+                desc=f"Coyo700m-{idx}",
                 cache_file_name=str(cache_file_path),
                 remove_columns=dataset.column_names,
             )
