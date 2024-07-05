@@ -1,6 +1,8 @@
-import logging
+import os
 from io import BytesIO
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
+from threading import Semaphore
 
 import pyarrow as pa
 from datasets import (
@@ -113,6 +115,17 @@ class Coyo700m(GeneratorBasedBuilder):
                 "aesthetic_score_laion_v2": Value("float32"),
             }
         )
+        self.resizer = Resizer(
+            image_size=256,
+            resize_mode="no",
+            min_image_size=10,
+            resize_only_if_bigger=False,
+        )
+
+        self.thread_num = os.getenv("COYO_THREAD_NUM", 20)
+        self.num_proc = os.getenv("COYO_NUM_PROC", 20)
+        self.batched = os.getenv("COYO_BATCHED", True)
+        self.batch_size = os.getenv("COYO_BATCH_SIZE", 1000)
 
         return DatasetInfo(
             description=_DESCRIPTION,
@@ -137,66 +150,34 @@ class Coyo700m(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath, split):
-        def image_downloader(example):
-            breakpoint()
+        idx_ = 0
+        for idx, parquet_path in enumerate(filepath.values()):
+            dataset = load_dataset("parquet", data_files=parquet_path, split="train")
+
+            parquet_path = Path(parquet_path)
+            cache_file_path = parquet_path.parent.joinpath("Coyo700m_cache_file", f"Coyo700m-{idx}_cache_file.arrow")
+
+            if not cache_file_path.parent.exists():
+                print(f"mkdir Coyo700m_cache_file at {cache_file_path.parent}")
+                cache_file_path.parent.mkdir()
+
+            dataset = dataset.map(
+                self.image_downloader,
+                num_proc=self.num_proc,
+                batched=self.batched,
+                batch_size=self.batch_size,
+                load_from_cache_file=True,
+                desc=f"Coyo700m-{idx}",
+                cache_file_name=str(cache_file_path),
+                remove_columns=dataset.column_names,
+            )
+            for data in dataset:
+                yield (idx_, data)
+                idx_ += 1
+
+    def image_downloader(self, example):
+        def downloader(data_row):
             (
-                sample_id_ls,
-                url_ls,
-                text_ls,
-                width_ls,
-                height_ls,
-                image_phash_ls,
-                text_length_ls,
-                word_count_ls,
-                num_tokens_bert_ls,
-                num_tokens_gpt_ls,
-                num_faces_ls,
-                clip_similarity_vitb32_ls,
-                clip_similarity_vitl14_ls,
-                nsfw_score_opennsfw2_ls,
-                nsfw_score_gantman_ls,
-                watermark_score_ls,
-                aesthetic_score_laion_v2_ls,
-            ) = (
-                example["id"],
-                example["url"],
-                example["text"],
-                example["width"],
-                example["height"],
-                example["image_phash"],
-                example["text_length"],
-                example["word_count"],
-                example["num_tokens_bert"],
-                example["num_tokens_gpt"],
-                example["num_faces"],
-                example["clip_similarity_vitb32"],
-                example["clip_similarity_vitl14"],
-                example["nsfw_score_opennsfw2"],
-                example["nsfw_score_gantman"],
-                example["watermark_score"],
-                example["aesthetic_score_laion_v2"],
-            )
-            finish_data_ls = list()
-            coyo_zip = zip(
-                sample_id_ls,
-                url_ls,
-                text_ls,
-                width_ls,
-                height_ls,
-                image_phash_ls,
-                text_length_ls,
-                word_count_ls,
-                num_tokens_bert_ls,
-                num_tokens_gpt_ls,
-                num_faces_ls,
-                clip_similarity_vitb32_ls,
-                clip_similarity_vitl14_ls,
-                nsfw_score_opennsfw2_ls,
-                nsfw_score_gantman_ls,
-                watermark_score_ls,
-                aesthetic_score_laion_v2_ls,
-            )
-            for (
                 sample_id,
                 url,
                 text,
@@ -214,21 +195,172 @@ class Coyo700m(GeneratorBasedBuilder):
                 nsfw_score_gantman,
                 watermark_score,
                 aesthetic_score_laion_v2,
-            ) in coyo_zip:
-                idx, io_stream, err = download_image_with_retry(
-                    (sample_id, url),
-                    timeout=5,
-                    retries=2,
-                    user_agent_token=None,
-                    disallowed_header_directives=False,
+            ) = data_row
+            idx, io_stream, err = download_image_with_retry(
+                (sample_id, url),
+                timeout=10,
+                retries=2,
+                user_agent_token=None,
+                disallowed_header_directives=False,
+            )
+            if err:
+                semaphore.release()
+
+            img_bytes, _, _, orig_height, orig_width, err = self.resizer(io_stream)
+            if height != orig_height or width != orig_width:
+                semaphore.release()
+                return (
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
                 )
-                if err:
+            elif err:
+                semaphore.release()
+                return (
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+
+            semaphore.release()
+            return (
+                sample_id,
+                img_bytes,
+                text,
+                height,
+                width,
+                image_phash,
+                text_length,
+                word_count,
+                num_tokens_bert,
+                num_tokens_gpt,
+                num_faces,
+                clip_similarity_vitb32,
+                clip_similarity_vitl14,
+                nsfw_score_opennsfw2,
+                nsfw_score_gantman,
+                watermark_score,
+                aesthetic_score_laion_v2,
+            )
+
+        def data_generator():
+            for coyo_row in coyo_zip:
+                semaphore.acquire()
+                yield coyo_row
+
+        (
+            sample_id_ls,
+            url_ls,
+            text_ls,
+            width_ls,
+            height_ls,
+            image_phash_ls,
+            text_length_ls,
+            word_count_ls,
+            num_tokens_bert_ls,
+            num_tokens_gpt_ls,
+            num_faces_ls,
+            clip_similarity_vitb32_ls,
+            clip_similarity_vitl14_ls,
+            nsfw_score_opennsfw2_ls,
+            nsfw_score_gantman_ls,
+            watermark_score_ls,
+            aesthetic_score_laion_v2_ls,
+        ) = (
+            example["id"],
+            example["url"],
+            example["text"],
+            example["width"],
+            example["height"],
+            example["image_phash"],
+            example["text_length"],
+            example["word_count"],
+            example["num_tokens_bert"],
+            example["num_tokens_gpt"],
+            example["num_faces"],
+            example["clip_similarity_vitb32"],
+            example["clip_similarity_vitl14"],
+            example["nsfw_score_opennsfw2"],
+            example["nsfw_score_gantman"],
+            example["watermark_score"],
+            example["aesthetic_score_laion_v2"],
+        )
+
+        semaphore = Semaphore(self.thread_num * 2)
+        loader = data_generator()
+        finish_data_ls = list()
+        coyo_zip = zip(
+            sample_id_ls,
+            url_ls,
+            text_ls,
+            width_ls,
+            height_ls,
+            image_phash_ls,
+            text_length_ls,
+            word_count_ls,
+            num_tokens_bert_ls,
+            num_tokens_gpt_ls,
+            num_faces_ls,
+            clip_similarity_vitb32_ls,
+            clip_similarity_vitl14_ls,
+            nsfw_score_opennsfw2_ls,
+            nsfw_score_gantman_ls,
+            watermark_score_ls,
+            aesthetic_score_laion_v2_ls,
+        )
+
+        with ThreadPool(self.thread_num) as thread_pool:
+            thead_iter = thread_pool.imap_unordered(downloader, loader)
+            for (
+                sample_id,
+                img_bytes,
+                text,
+                width,
+                height,
+                image_phash,
+                text_length,
+                word_count,
+                num_tokens_bert,
+                num_tokens_gpt,
+                num_faces,
+                clip_similarity_vitb32,
+                clip_similarity_vitl14,
+                nsfw_score_opennsfw2,
+                nsfw_score_gantman,
+                watermark_score,
+                aesthetic_score_laion_v2,
+            ) in thead_iter:
+                if not img_bytes:
                     continue
-                img_bytes, _, _, orig_height, orig_width, err = resizer(io_stream)
-                if height != orig_height or width != orig_width:
-                    continue
-                elif err:
-                    continue
+
                 pil_image = PIL_Image.open(BytesIO(img_bytes))
                 pil_image.load()
                 pil_image.verify()
@@ -258,36 +390,5 @@ class Coyo700m(GeneratorBasedBuilder):
                     "aesthetic_score_laion_v2": aesthetic_score_laion_v2,
                 }
                 finish_data_ls.append(data)
-            return pa.Table.from_pylist(finish_data_ls)
 
-        resizer = Resizer(
-            image_size=256,
-            resize_mode="no",
-            min_image_size=10,
-            resize_only_if_bigger=False,
-        )
-
-        idx_ = 0
-        for idx, parquet_path in enumerate(filepath.values()):
-            dataset = load_dataset("parquet", data_files=[parquet_path], split="train")
-
-            parquet_path = Path(parquet_path)
-            cache_file_path = parquet_path.parent.joinpath("coyo700m_cache_file", f"coyo700m-{idx}_cache_file.arrow")
-
-            if not cache_file_path.parent.exists():
-                print(f"mkdir coyo700m_cache_file at {cache_file_path.parent}")
-                cache_file_path.parent.mkdir()
-
-            dataset = dataset.map(
-                image_downloader,
-                num_proc=1,
-                batched=True,
-                batch_size=10,
-                load_from_cache_file=True,
-                desc=f"Coyo700m-{idx}",
-                cache_file_name=str(cache_file_path),
-                remove_columns=dataset.column_names,
-            )
-            for data in dataset:
-                yield (idx_, data)
-                idx_ += 1
+        return pa.Table.from_pylist(finish_data_ls)
