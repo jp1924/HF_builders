@@ -1,6 +1,8 @@
-import logging
+import os
 from io import BytesIO
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
+from threading import Semaphore
 
 import pyarrow as pa
 from datasets import (
@@ -83,6 +85,18 @@ class Laion400m(GeneratorBasedBuilder):
             }
         )
 
+        self.resizer = Resizer(
+            image_size=256,
+            resize_mode="no",
+            min_image_size=10,
+            resize_only_if_bigger=False,
+        )
+
+        self.thread_num = os.getenv("LAION_THREAD_NUM", 15)
+        self.num_proc = os.getenv("LAION_NUM_PROC", 20)
+        self.batched = os.getenv("LAION_BATCHED", True)
+        self.batch_size = os.getenv("LAION_BATCH_SIZE", 1000)
+
         return DatasetInfo(
             description=_DESCRIPTION,
             features=features,
@@ -106,34 +120,82 @@ class Laion400m(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath, split):
-        def image_downloader(example):
-            sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls = (
-                example["SAMPLE_ID"] if isinstance(example["SAMPLE_ID"], list) else [example["SAMPLE_ID"]],
-                example["URL"] if isinstance(example["URL"], list) else [example["URL"]],
-                example["TEXT"] if isinstance(example["TEXT"], list) else [example["TEXT"]],
-                example["HEIGHT"] if isinstance(example["HEIGHT"], list) else [example["HEIGHT"]],
-                example["WIDTH"] if isinstance(example["WIDTH"], list) else [example["WIDTH"]],
-                example["LICENSE"] if isinstance(example["LICENSE"], list) else [example["LICENSE"]],
-                example["NSFW"] if isinstance(example["NSFW"], list) else [example["NSFW"]],
-                example["similarity"] if isinstance(example["similarity"], list) else [example["similarity"]],
+        idx_ = 0
+        for idx, parquet_path in enumerate(filepath.values()):
+            dataset = load_dataset("parquet", data_files=parquet_path, split="train")
+
+            parquet_path = Path(parquet_path)
+            cache_file_path = parquet_path.parent.joinpath("Laion400m_cache_file", f"Laion400m-{idx}_cache_file.arrow")
+
+            if not cache_file_path.parent.exists():
+                print(f"mkdir Laion400m_cache_file at {cache_file_path.parent}")
+                cache_file_path.parent.mkdir()
+
+            dataset = dataset.map(
+                self.image_downloader,
+                num_proc=self.num_proc,
+                batched=self.batched,
+                batch_size=self.batch_size,
+                load_from_cache_file=True,
+                desc=f"Laion400m-{idx}",
+                cache_file_name=str(cache_file_path),
+                remove_columns=dataset.column_names,
             )
-            finish_data_ls = list()
-            laion_zip = zip(sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls)
-            for sample_id, url, text, height, width, license_, nsfw, similarity in laion_zip:
-                idx, io_stream, err = download_image_with_retry(
-                    (sample_id, url),
-                    timeout=5,
-                    retries=2,
-                    user_agent_token=None,
-                    disallowed_header_directives=False,
-                )
-                if err:
+            for data in dataset:
+                yield (idx_, data)
+                idx_ += 1
+
+    def image_downloader(self, example):
+        def downloader(data_row):
+            sample_id, url, text, height, width, license_, nsfw, similarity = data_row
+            idx, io_stream, err = download_image_with_retry(
+                (sample_id, url),
+                timeout=5,
+                retries=2,
+                user_agent_token=None,
+                disallowed_header_directives=False,
+            )
+            if err:
+                semaphore.release()
+                return (None, None, None, None, None, None, None, None)
+
+            img_bytes, _, _, orig_height, orig_width, err = self.resizer(io_stream)
+            if height != orig_height or width != orig_width:
+                semaphore.release()
+                return (None, None, None, None, None, None, None, None)
+            elif err:
+                semaphore.release()
+                return (None, None, None, None, None, None, None, None)
+
+            semaphore.release()
+            return sample_id, img_bytes, text, height, width, license_, nsfw, similarity
+
+        def data_generator():
+            for laion_row in laion_zip:
+                semaphore.acquire()
+                yield laion_row
+
+        sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls = (
+            example["SAMPLE_ID"] if isinstance(example["SAMPLE_ID"], list) else [example["SAMPLE_ID"]],
+            example["URL"] if isinstance(example["URL"], list) else [example["URL"]],
+            example["TEXT"] if isinstance(example["TEXT"], list) else [example["TEXT"]],
+            example["HEIGHT"] if isinstance(example["HEIGHT"], list) else [example["HEIGHT"]],
+            example["WIDTH"] if isinstance(example["WIDTH"], list) else [example["WIDTH"]],
+            example["LICENSE"] if isinstance(example["LICENSE"], list) else [example["LICENSE"]],
+            example["NSFW"] if isinstance(example["NSFW"], list) else [example["NSFW"]],
+            example["similarity"] if isinstance(example["similarity"], list) else [example["similarity"]],
+        )
+
+        semaphore = Semaphore(self.thread_num * 2)
+        loader = data_generator()
+        finish_data_ls = list()
+        laion_zip = zip(sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls)
+        with ThreadPool(self.thread_num) as thread_pool:
+            thead_iter = thread_pool.imap_unordered(downloader, loader)
+            for sample_id, img_bytes, text, height, width, license_, nsfw, similarity in thead_iter:
+                if not img_bytes:
                     continue
-                img_bytes, _, _, orig_height, orig_width, err = resizer(io_stream)
-                if height != orig_height or width != orig_width:
-                    continue
-                elif err:
-                    continue
+
                 pil_image = PIL_Image.open(BytesIO(img_bytes))
                 pil_image.load()
                 pil_image.verify()
@@ -154,36 +216,5 @@ class Laion400m(GeneratorBasedBuilder):
                     "similarity": similarity,
                 }
                 finish_data_ls.append(data)
-            return pa.Table.from_pylist(finish_data_ls)
 
-        resizer = Resizer(
-            image_size=256,
-            resize_mode="no",
-            min_image_size=10,
-            resize_only_if_bigger=False,
-        )
-
-        idx_ = 0
-        for idx, parquet_path in enumerate(filepath.values()):
-            dataset = load_dataset("parquet", data_files=parquet_path, split="train")
-
-            parquet_path = Path(parquet_path)
-            cache_file_path = parquet_path.parent.joinpath("Laion400m_cache_file", f"Laion400m-{idx}_cache_file.arrow")
-
-            if not cache_file_path.parent.exists():
-                print(f"mkdir Laion400m_cache_file at {cache_file_path.parent}")
-                cache_file_path.parent.mkdir()
-
-            dataset = dataset.map(
-                image_downloader,
-                num_proc=20,
-                batched=True,
-                batch_size=50,
-                load_from_cache_file=True,
-                desc=f"Laion400m-{idx}",
-                cache_file_name=str(cache_file_path),
-                remove_columns=dataset.column_names,
-            )
-            for data in dataset:
-                yield (idx_, data)
-                idx_ += 1
+        return pa.Table.from_pylist(finish_data_ls)
