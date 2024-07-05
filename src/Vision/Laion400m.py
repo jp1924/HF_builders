@@ -1,9 +1,8 @@
 import logging
-import warnings
 from io import BytesIO
 from pathlib import Path
 
-import requests
+import pyarrow as pa
 from datasets import (
     BuilderConfig,
     DatasetInfo,
@@ -16,11 +15,10 @@ from datasets import (
     Version,
     load_dataset,
 )
+from img2dataset.downloader import download_image_with_retry
+from img2dataset.resizer import Resizer
 from PIL import Image as PIL_Image
 
-
-logging.basicConfig(filename="Laion400m_download_fail.log", level=logging.INFO)
-warnings.filterwarnings("error")
 
 URLS = {
     "part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
@@ -77,6 +75,8 @@ class Laion400m(GeneratorBasedBuilder):
                 "caption": Value("string"),
                 "caption_ls": [Value("string")],
                 "category": Value("string"),
+                "height": Value("int32"),
+                "width": Value("int32"),
                 "license": Value("string"),
                 "nsfw": Value("string"),
                 "similarity": Value("float"),
@@ -106,80 +106,66 @@ class Laion400m(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath, split):
-        def download_img(example, rank):
-            sample_id_ls = example["SAMPLE_ID"]
-            sample_id_ls = sample_id_ls = sample_id_ls if isinstance(sample_id_ls, list) else [sample_id_ls]
+        def image_downloader(example):
+            sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls = (
+                example["SAMPLE_ID"] if isinstance(example["SAMPLE_ID"], list) else [example["SAMPLE_ID"]],
+                example["URL"] if isinstance(example["URL"], list) else [example["URL"]],
+                example["TEXT"] if isinstance(example["TEXT"], list) else [example["TEXT"]],
+                example["HEIGHT"] if isinstance(example["HEIGHT"], list) else [example["HEIGHT"]],
+                example["WIDTH"] if isinstance(example["WIDTH"], list) else [example["WIDTH"]],
+                example["LICENSE"] if isinstance(example["LICENSE"], list) else [example["LICENSE"]],
+                example["NSFW"] if isinstance(example["NSFW"], list) else [example["NSFW"]],
+                example["similarity"] if isinstance(example["similarity"], list) else [example["similarity"]],
+            )
+            finish_data_ls = list()
+            laion_zip = zip(sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls)
+            for sample_id, url, text, height, width, license_, nsfw, similarity in laion_zip:
+                idx, io_stream, err = download_image_with_retry(
+                    (sample_id, url),
+                    timeout=5,
+                    retries=2,
+                    user_agent_token=None,
+                    disallowed_header_directives=False,
+                )
+                if err:
+                    continue
+                img_bytes, _, _, orig_height, orig_width, err = resizer(io_stream)
+                if height != orig_height or width != orig_width:
+                    continue
+                elif err:
+                    continue
+                pil_image = PIL_Image.open(BytesIO(img_bytes))
+                pil_image.load()
+                pil_image.verify()
 
-            url_ls = example["URL"]
-            url_ls = url_ls = url_ls if isinstance(url_ls, list) else [url_ls]
-
-            text_ls = example["TEXT"]
-            text_ls = text_ls = text_ls if isinstance(text_ls, list) else [text_ls]
-
-            license_ls = example["LICENSE"]
-            license_ls = license_ls = license_ls if isinstance(license_ls, list) else [license_ls]
-
-            nsfw_ls = example["NSFW"]
-            nsfw_ls = nsfw_ls = nsfw_ls if isinstance(nsfw_ls, list) else [nsfw_ls]
-
-            similarity_ls = example["similarity"]
-            similarity_ls = similarity_ls = similarity_ls if isinstance(similarity_ls, list) else [similarity_ls]
-
-            data = {
-                "id": [],
-                "image": [],
-                "caption": [],
-                "caption_ls": [],
-                "category": [],
-                "license": [],
-                "nsfw": [],
-                "similarity": [],
-            }
-            iter_zip = zip(sample_id_ls, url_ls, text_ls, license_ls, nsfw_ls, similarity_ls)
-            for sample_id, url, text, license, nsfw, similarity in iter_zip:
-                try:
-                    response = requests.get(url, timeout=5)
-                    if response.status_code != 200:
-                        logging.info(f"{sample_id} is skip")
-                        continue
-
-                    img_bytes = BytesIO(response.content)
-                    # 종종 byte가 다운 받아져도 열리지 않는 깨진 이미지가 다운 받아지는 경우가 있음
-                    # 그리고 warning이 뜨면 error가 나도록 만들어 놨는데 정상 동작하는지 테스트는 안했음.
-                    img = PIL_Image.open(img_bytes)
-                    img.load()
-                    img.verify()
-
-                    if img.format not in ["JPEG", "PNG", "WebP"]:
-                        raise ValueError()
-
-                    # 10 이하의 이미지들은 대부분 다 필터링 하도록 만듬.
-                    if img.width < 10 or img.height < 10:
-                        raise ValueError()
-
-                    if not (text or sample_id):
-                        raise ValueError()
-
-                except:
-                    logging.info(f"{sample_id} is skip")
+                if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
                     continue
 
-                image = PIL_Image.open(BytesIO(response.content)).convert("RGB")
+                data = {
+                    "id": sample_id,
+                    "image": img_bytes,
+                    "caption": text,
+                    "caption_ls": [text],
+                    "category": None,
+                    "height": height,
+                    "width": width,
+                    "license": license_,
+                    "nsfw": nsfw,
+                    "similarity": similarity,
+                }
+                finish_data_ls.append(data)
+            return pa.Table.from_pylist(finish_data_ls)
 
-                data["id"].append(sample_id)
-                data["image"].append(image)
-                data["caption"].append(text)
-                data["caption_ls"].append([text])
-                data["category"].append(None)
-                data["license"].append(license)
-                data["nsfw"].append(nsfw)
-                data["similarity"].append(similarity)
-
-            return data
+        resizer = Resizer(
+            image_size=256,
+            resize_mode="no",
+            min_image_size=10,
+            resize_only_if_bigger=False,
+        )
 
         idx_ = 0
         for idx, parquet_path in enumerate(filepath.values()):
-            dataset = load_dataset("parquet", data_files=[parquet_path], split="train")
+            dataset = load_dataset("parquet", data_files=parquet_path, split="train")
 
             parquet_path = Path(parquet_path)
             cache_file_path = parquet_path.parent.joinpath("Laion400m_cache_file", f"Laion400m-{idx}_cache_file.arrow")
@@ -189,13 +175,12 @@ class Laion400m(GeneratorBasedBuilder):
                 cache_file_path.parent.mkdir()
 
             dataset = dataset.map(
-                download_img,
-                num_proc=30,
+                image_downloader,
+                num_proc=20,
                 batched=True,
-                batch_size=10,
+                batch_size=50,
                 load_from_cache_file=True,
                 desc=f"Laion400m-{idx}",
-                with_rank=True,
                 cache_file_name=str(cache_file_path),
                 remove_columns=dataset.column_names,
             )
