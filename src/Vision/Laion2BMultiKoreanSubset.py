@@ -1,8 +1,10 @@
-import logging
-import warnings
+import os
 from io import BytesIO
+from multiprocessing.pool import ThreadPool
+from pathlib import Path
+from threading import Semaphore
 
-import requests
+import pyarrow as pa
 from datasets import (
     BuilderConfig,
     DatasetInfo,
@@ -15,11 +17,9 @@ from datasets import (
     Version,
     load_dataset,
 )
+from img2dataset.downloader import download_image_with_retry
+from img2dataset.resizer import Resizer
 from PIL import Image as PIL_Image
-from setproctitle import setproctitle
-
-
-logging.basicConfig(filename="Laion2BMultiKoreanSubset_download_fail.log", level=logging.INFO)
 
 
 _URLs = {
@@ -30,50 +30,47 @@ _URLs = {
     "12f9b17a7d230ec9": "https://huggingface.co/datasets/Bingsu/laion2B-multi-korean-subset/resolve/main/data/train-00004-of-00006-829cbdc252d37dd4.parquet?download=true",
     "561e693a58593192": "https://huggingface.co/datasets/Bingsu/laion2B-multi-korean-subset/resolve/main/data/train-00005-of-00006-5435e409ba6a048d.parquet?download=true",
 }
-
-
-setproctitle("Laion2BMultiKoreanSubset_builder")
-
-
-class WarningAsException(Exception):
-    pass
-
-
-def warning_to_exception(message, category, filename, lineno, file=None, line=None):
-    raise WarningAsException(message)
+_DESCRIPTION = """a subset data of laion/laion2B-multi, including only korean"""
+_VERSION = Version("1.0.0")
 
 
 class Laion2BMultiKoreanSubset(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [
-        BuilderConfig(
-            name="default",
-            version=Version("1.0.0"),
-            description="a subset data of laion/laion2B-multi, including only korean",
-        ),
-    ]
-
+    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION, description=_DESCRIPTION)]
     DEFAULT_CONFIG_NAME = "default"
+    VERSION = _VERSION
 
     def _info(self):
         features = Features(
             {
-                "id": Value("int32"),
+                "id": Value("int64"),
                 "image": Image(),
                 "caption": Value("string"),
                 "caption_ls": [Value("string")],
                 "category": Value("string"),
                 "language": Value("string"),
+                "height": Value("int32"),
+                "width": Value("int32"),
                 "nsfw": Value("string"),
                 "license": Value("string"),
                 "similarity": Value("float32"),
             }
         )
+        self.resizer = Resizer(
+            image_size=256,
+            resize_mode="no",
+            min_image_size=10,
+            resize_only_if_bigger=False,
+        )
+
+        self.thread_num = os.getenv("LAION_THREAD_NUM", 15)
+        self.num_proc = os.getenv("LAION_NUM_PROC", 20)
+        self.batched = os.getenv("LAION_BATCHED", True)
+        self.batch_size = os.getenv("LAION_BATCH_SIZE", 1000)
 
         return DatasetInfo(
+            description=_DESCRIPTION,
+            version=_VERSION,
             features=features,
-            supervised_keys=None,
-            citation=None,
-            description="a subset data of laion/laion2B-multi, including only korean",
         )
 
     def _split_generators(self, dl_manager):
@@ -88,93 +85,103 @@ class Laion2BMultiKoreanSubset(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath, split):
-        warnings.showwarning = warning_to_exception
+        idx_ = 0
+        for idx, parquet_path in enumerate(filepath.values()):
+            dataset = load_dataset("parquet", data_files=parquet_path, split="train")
 
-        def download_img(example):
-            url_ls = example["URL"]
-            url_ls = url_ls = url_ls if isinstance(url_ls, list) else [url_ls]
-
-            sample_id_ls = example["SAMPLE_ID"]
-            sample_id_ls = sample_id_ls = sample_id_ls if isinstance(sample_id_ls, list) else [sample_id_ls]
-
-            license_ls = example["LICENSE"]
-            license_ls = license_ls = license_ls if isinstance(license_ls, list) else [license_ls]
-
-            nsfw_ls = example["NSFW"]
-            nsfw_ls = nsfw_ls = nsfw_ls if isinstance(nsfw_ls, list) else [nsfw_ls]
-
-            language_ls = example["LANGUAGE"]
-            language_ls = language_ls = language_ls if isinstance(language_ls, list) else [language_ls]
-
-            similarity_ls = example["similarity"]
-            similarity_ls = similarity_ls = similarity_ls if isinstance(similarity_ls, list) else [similarity_ls]
-
-            korean_caption_ls = example["TEXT"]
-            korean_caption_ls = korean_caption_ls = (
-                korean_caption_ls if isinstance(korean_caption_ls, list) else [korean_caption_ls]
+            parquet_path = Path(parquet_path)
+            cache_file_path = parquet_path.parent.joinpath(
+                "Laion2BMultiKoreanSubset_cache_file", f"Laion2BMultiKoreanSubset-{idx}_cache_file.arrow"
             )
 
-            data = {
-                "id": [],
-                "image": [],
-                "caption": [],
-                "caption_ls": [],
-                "category": [],
-                "license": [],
-                "nsfw": [],
-                "language": [],
-                "similarity": [],
-            }
-            for url, korean_caption, license, nsfw, language, similarity, sample_id in zip(
-                url_ls,
-                korean_caption_ls,
-                license_ls,
-                nsfw_ls,
-                language_ls,
-                similarity_ls,
-                sample_id_ls,
-            ):
-                try:
-                    response = requests.get(url, timeout=5)
-                    if response.status_code != 200:
-                        logging.info(f"{url} is skip")
-                        continue
+            if not cache_file_path.parent.exists():
+                print(f"mkdir Laion2BMultiKoreanSubset_cache_file at {cache_file_path.parent}")
+                cache_file_path.parent.mkdir()
 
-                    response.raise_for_status()
-                    img_bytes = BytesIO(response.content)
-                    PIL_Image.open(img_bytes).load()
-                except WarningAsException as e:
-                    logging.info(f"{url} is warning and skip")
-                    continue
-                except:
-                    logging.info(f"{url} is skip")
-                    continue
-                data["image"].append(PIL_Image.open(BytesIO(response.content)))
-                data["caption"].append(korean_caption)
-                data["caption_ls"].append([korean_caption])
-                data["category"].append(None)
-                data["license"].append(license)
-                data["nsfw"].append(nsfw)
-                data["language"].append(language)
-                data["similarity"].append(similarity)
-                data["id"].append(sample_id)
-
-            return data
-
-        idx = 1
-        for parquet_path in filepath.values():
-            part_dataset = load_dataset("parquet", data_files=parquet_path, split=split)
-            part_dataset = part_dataset.map(
-                download_img,
-                num_proc=40,
-                batched=True,
-                batch_size=10,
-                remove_columns=part_dataset.column_names,
+            dataset = dataset.map(
+                self.image_downloader,
+                num_proc=self.num_proc,
+                batched=self.batched,
+                batch_size=self.batch_size,
+                load_from_cache_file=True,
+                desc=f"Laion2BMultiKoreanSubset-{idx}",
+                cache_file_name=str(cache_file_path),
+                remove_columns=dataset.column_names,
             )
+            for data in dataset:
+                yield (idx_, data)
+                idx_ += 1
 
-            for row in part_dataset:
-                # pyarrow.lib.ArrowInvalid: Integer value 3737204013042 not in range: -2147483648 to 2147483647
-                # 같은 애러가 발생해서 id를 재 정의 함.
-                row["id"] = idx
-                yield (idx, row)
-                idx += 1
+    def image_downloader(self, example):
+        def downloader(data_row):
+            sample_id, url, text, height, width, license_, nsfw, similarity = data_row
+            idx, io_stream, err = download_image_with_retry(
+                (sample_id, url),
+                timeout=5,
+                retries=2,
+                user_agent_token=None,
+                disallowed_header_directives=False,
+            )
+            if err:
+                semaphore.release()
+                return (None, None, None, None, None, None, None, None)
+
+            img_bytes, _, _, orig_height, orig_width, err = self.resizer(io_stream)
+            if height != orig_height or width != orig_width:
+                semaphore.release()
+                return (None, None, None, None, None, None, None, None)
+            elif err:
+                semaphore.release()
+                return (None, None, None, None, None, None, None, None)
+
+            semaphore.release()
+            return sample_id, img_bytes, text, height, width, license_, nsfw, similarity
+
+        def data_generator():
+            for laion_row in laion_zip:
+                semaphore.acquire()
+                yield laion_row
+
+        sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls = (
+            example["SAMPLE_ID"] if isinstance(example["SAMPLE_ID"], list) else [example["SAMPLE_ID"]],
+            example["URL"] if isinstance(example["URL"], list) else [example["URL"]],
+            example["TEXT"] if isinstance(example["TEXT"], list) else [example["TEXT"]],
+            example["HEIGHT"] if isinstance(example["HEIGHT"], list) else [example["HEIGHT"]],
+            example["WIDTH"] if isinstance(example["WIDTH"], list) else [example["WIDTH"]],
+            example["LICENSE"] if isinstance(example["LICENSE"], list) else [example["LICENSE"]],
+            example["NSFW"] if isinstance(example["NSFW"], list) else [example["NSFW"]],
+            example["similarity"] if isinstance(example["similarity"], list) else [example["similarity"]],
+        )
+
+        semaphore = Semaphore(self.thread_num * 2)
+        loader = data_generator()
+        finish_data_ls = list()
+        laion_zip = zip(sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls)
+        with ThreadPool(self.thread_num) as thread_pool:
+            thead_iter = thread_pool.imap_unordered(downloader, loader)
+            for sample_id, img_bytes, text, height, width, license_, nsfw, similarity in thead_iter:
+                if not img_bytes:
+                    continue
+
+                pil_image = PIL_Image.open(BytesIO(img_bytes))
+                pil_image.load()
+                pil_image.verify()
+
+                if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
+                    continue
+
+                data = {
+                    "id": sample_id,
+                    "image": img_bytes,
+                    "caption": text,
+                    "caption_ls": [text],
+                    "category": None,
+                    "height": height,
+                    "width": width,
+                    "license": license_,
+                    "nsfw": nsfw,
+                    "similarity": similarity,
+                }
+                finish_data_ls.append(data)
+
+        return pa.Table.from_pylist(finish_data_ls)
