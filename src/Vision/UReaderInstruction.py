@@ -1,12 +1,9 @@
-# -*- coding: utf-8 -*-
 import json
 import os
+import sys
 from pathlib import Path
-from tarfile import TarFile
 from typing import List
-from zipfile import ZipFile
 
-import requests
 from datasets import (
     DatasetInfo,
     Features,
@@ -17,7 +14,10 @@ from datasets import (
     Value,
     Version,
 )
-from tqdm import tqdm
+from PIL import Image as PIL_Image
+
+from transformers.trainer_pt_utils import get_length_grouped_indices
+
 
 URLS = {
     "ChartQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/ChartQA.tar?download=true",
@@ -42,12 +42,9 @@ class UReaderInstruction(GeneratorBasedBuilder):
         return DatasetInfo(
             features=Features(
                 {
-                    "image": [Image()],
-                    "prompt": Value("string"),
-                    "text": Value("string"),
-                    "system_instruction": Value("string"),
-                    "conversations": [{"from": Value("string"), "value": Value("string")}],
-                    "task_type": Value("string"),
+                    "image": Image(),
+                    "conversations": [{"role": Value("string"), "content": Value("string")}],
+                    "metadata": {"source": Value("string")},
                 }
             ),
             supervised_keys=None,
@@ -76,6 +73,7 @@ class UReaderInstruction(GeneratorBasedBuilder):
                         )
                         img_ls.append(Path(data_dir, img))
                     line["image"] = img_ls
+                    line["date_from"] = start_name
                     json_ls[idx] = line
 
                 data_ls.extend(json_ls)
@@ -114,7 +112,34 @@ class UReaderInstruction(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath: List[dict], split: str):
-        for idx, x in enumerate(filepath):
-            x["image"] = [str(x["image"][0])]
+        check_dict = dict()
+        test = [os.path.getsize(x["image"][0]) for x in filepath]
+        test = get_length_grouped_indices(test, 1, mega_batch_mult=1000)
+        for idx, x in enumerate(test):
+            x = filepath[x]
+            image_path = str(x["image"][0])
 
-            yield (idx, x)
+            conversations = list()
+            for chat in x["conversations"]:
+                if chat["value"] == "<image>":
+                    continue
+                chat = {"role": chat["from"], "content": chat["value"]}
+                conversations.append(chat)
+
+            try:
+                img = PIL_Image.open(image_path)
+                PIL_Image._decompression_bomb_check(img.size)
+            except:
+                print("pass")
+                continue
+
+            image_bytes = Path(image_path).read_bytes()
+
+            data = {
+                "image": image_bytes,
+                "conversations": conversations,
+                "metadata": {"source": x["date_from"]},
+            }
+
+            yield (idx, data)
+            check_dict[image_path] = conversations
