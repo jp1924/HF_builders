@@ -1,10 +1,12 @@
-import logging
+import os
 from io import BytesIO
-import warnings
+from multiprocessing.pool import ThreadPool
+from pathlib import Path
+from threading import Semaphore
 
-from PIL import Image as PIL_Image
-import requests
+import pyarrow as pa
 from datasets import (
+    BuilderConfig,
     DatasetInfo,
     Features,
     GeneratorBasedBuilder,
@@ -15,10 +17,10 @@ from datasets import (
     Version,
     load_dataset,
 )
-from setproctitle import setproctitle
+from img2dataset.downloader import download_image_with_retry
+from img2dataset.resizer import Resizer
+from PIL import Image as PIL_Image
 
-
-logging.basicConfig(filename="download_fail.log", level=logging.INFO)
 
 _DESCRIPTION = """CC12M of flax-community/conceptual-captions-12 translated from English to Korean."""
 
@@ -35,15 +37,6 @@ _URLs = {
 }
 
 
-setproctitle("KoCC12M_builder")
-
-class WarningAsException(Exception):
-    pass
-
-
-def warning_to_exception(message, category, filename, lineno, file=None, line=None):
-    raise WarningAsException(message)
-
 class KoCC12M(GeneratorBasedBuilder):
     VERSION = Version("1.0.0")
 
@@ -58,6 +51,18 @@ class KoCC12M(GeneratorBasedBuilder):
                 "en_caption": Value("string"),
             }
         )
+
+        self.resizer = Resizer(
+            image_size=256,
+            resize_mode="no",
+            min_image_size=10,
+            resize_only_if_bigger=False,
+        )
+
+        self.thread_num = os.getenv("CC12_THREAD_NUM", 20)
+        self.num_proc = os.getenv("CC12_NUM_PROC", 20)
+        self.batched = os.getenv("CC12_BATCHED", True)
+        self.batch_size = os.getenv("CC12_BATCH_SIZE", 100)
 
         return DatasetInfo(
             features=features,
@@ -78,65 +83,93 @@ class KoCC12M(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath, split):
-        warnings.showwarning = warning_to_exception
-        
-        def download_img(example):
-            url_ls = example["url"]
-            url_ls = url_ls = url_ls if isinstance(url_ls, list) else [url_ls]
+        idx_ = 0
+        for idx, parquet_path in enumerate(filepath.values()):
+            dataset = load_dataset("parquet", data_files=parquet_path, split="train")
 
-            english_caption_ls = example["english_caption"]
-            english_caption_ls = english_caption_ls = (
-                english_caption_ls if isinstance(english_caption_ls, list) else [english_caption_ls]
+            parquet_path = Path(parquet_path)
+            cache_file_path = parquet_path.parent.joinpath("KoCC12M_cache_file", f"KoCC12M-{idx}_cache_file.arrow")
+
+            if not cache_file_path.parent.exists():
+                print(f"mkdir KoCC12M_cache_file at {cache_file_path.parent}")
+                cache_file_path.parent.mkdir()
+
+            dataset = dataset.map(
+                self.image_downloader,
+                num_proc=self.num_proc,
+                batched=self.batched,
+                batch_size=self.batch_size,
+                load_from_cache_file=True,
+                desc=f"KoCC12M-{idx}",
+                cache_file_name=str(cache_file_path),
+                remove_columns=dataset.column_names,
+            )
+            for data in dataset:
+                yield (idx_, data)
+                idx_ += 1
+
+    def image_downloader(self, example):
+        def downloader(data_row):
+            url, korean_caption, english_caption = data_row
+            _, io_stream, err = download_image_with_retry(
+                (0, url),
+                timeout=5,
+                retries=2,
+                user_agent_token=None,
+                disallowed_header_directives=False,
             )
 
-            korean_caption_ls = example["korean_caption"]
-            korean_caption_ls = korean_caption_ls = (
-                korean_caption_ls if isinstance(korean_caption_ls, list) else [korean_caption_ls]
-            )
+            img_bytes, _, _, orig_height, orig_width, err = self.resizer(io_stream)
+            if not (orig_height and orig_width):
+                semaphore.release()
+                return (None, None, None)
+            elif orig_height < 10 or orig_width < 10:
+                semaphore.release()
+                return (None, None, None)
+            elif err:
+                semaphore.release()
+                return (None, None, None)
 
-            data = {
-                "image": [],
-                "caption": [],
-                "caption_ls": [],
-                "category": [],
-                "en_caption": [],
-            }
-            for url, korean_caption, english_caption in zip(url_ls, korean_caption_ls, english_caption_ls):
-                try:
-                    response = requests.get(url, timeout=5)
-                    if response.status_code != 200:
-                        logging.info(f"{url} is skip")
-                        continue
+            semaphore.release()
+            return img_bytes, korean_caption, english_caption
 
-                    response.raise_for_status()
-                    img_bytes = BytesIO(response.content)
-                    PIL_Image.open(img_bytes).load()
-                except WarningAsException as e:
-                    logging.info(f"{url} is warning and skip")
+        def data_generator():
+            for laion_row in cc12_zip:
+                semaphore.acquire()
+                yield laion_row
+
+        url_ls, korean_caption_ls, english_caption_ls = (
+            example["url"] if isinstance(example["url"], list) else [example["url"]],
+            example["korean_caption"] if isinstance(example["korean_caption"], list) else [example["korean_caption"]],
+            example["english_caption"]
+            if isinstance(example["english_caption"], list)
+            else [example["english_caption"]],
+        )
+
+        semaphore = Semaphore(self.thread_num * 2)
+        loader = data_generator()
+        finish_data_ls = list()
+        cc12_zip = zip(url_ls, korean_caption_ls, english_caption_ls)
+        with ThreadPool(self.thread_num) as thread_pool:
+            thead_iter = thread_pool.imap_unordered(downloader, loader)
+            for img_bytes, korean_caption, english_caption in thead_iter:
+                if not img_bytes:
                     continue
-                except:
-                    logging.info(f"{url} is skip")
+
+                pil_image = PIL_Image.open(BytesIO(img_bytes))
+                pil_image.load()
+                pil_image.verify()
+
+                if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
                     continue
-                data["image"].append(PIL_Image.open(BytesIO(response.content)))
-                data["caption"].append(korean_caption)
-                data["caption_ls"].append([korean_caption])
-                data["category"].append(None)
-                data["en_caption"].append(english_caption)
 
-            return data
+                data = {
+                    "image": img_bytes,
+                    "caption": korean_caption,
+                    "caption_ls": [korean_caption],
+                    "category": None,
+                    "en_caption": english_caption,
+                }
+                finish_data_ls.append(data)
 
-        idx = 1
-        for parquet_path in filepath.values():
-            part_dataset = load_dataset("parquet", data_files=parquet_path, split=split)
-            part_dataset = part_dataset.map(
-                download_img,
-                num_proc=40,
-                batched=True,
-                batch_size=10,
-                remove_columns=part_dataset.column_names,
-            )
-
-            for row in part_dataset:
-                row["id"] = idx
-                yield (idx, row)
-                idx += 1
+        return pa.Table.from_pylist(finish_data_ls)
