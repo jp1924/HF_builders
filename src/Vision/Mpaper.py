@@ -189,8 +189,6 @@ class MPaper(GeneratorBasedBuilder):
 
             conversation_ls = list()
             for chat in conversations:
-                breakpoint()
-
                 if "<image>" in chat["value"] and chat["from"] == "user":
                     img_split_chat = chat["value"].split("<image>")
                     img_split_chat = [txt.replace("<|context|>: ", "").strip() for txt in img_split_chat]
