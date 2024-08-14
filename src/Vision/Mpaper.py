@@ -159,6 +159,7 @@ class MPaper(GeneratorBasedBuilder):
             batched=self.batched,
             batch_size=self.batch_size,
             features=self.features,
+            load_from_cache_file=True,
             remove_columns=datasets.column_names,
             fn_kwargs={"img_dir_path": image_path},
         )
