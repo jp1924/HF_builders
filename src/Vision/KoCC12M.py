@@ -105,6 +105,7 @@ class KoCC12M(GeneratorBasedBuilder):
                 remove_columns=dataset.column_names,
             )
             for data in dataset:
+                data["id"] = idx_
                 yield (idx_, data)
                 idx_ += 1
 
