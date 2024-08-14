@@ -29,7 +29,7 @@ TRAIN_URLs = {
 VALID_URLs = {
     "27c90b30911ef7aa": "https://huggingface.co/datasets/QuoQA-NLP/KoCC3M/resolve/main/data/validation-00000-of-00001-168f14d7fd7256ba.parquet?download=true",
 }
-_DESCRIPTION = """CC12M of flax-community/conceptual-captions-12 translated from English to Korean."""
+_DESCRIPTION = """CC3M of flax-community/conceptual-captions-12 translated from English to Korean."""
 _VERSION = Version("1.0.0")
 
 
@@ -46,7 +46,7 @@ class KoCC3M(GeneratorBasedBuilder):
                 "caption": Value("string"),
                 "caption_ls": [Value("string")],
                 "category": Value("string"),
-                "english_caption": Value("string"),
+                "en_caption": Value("string"),
             }
         )
 
@@ -57,15 +57,16 @@ class KoCC3M(GeneratorBasedBuilder):
             resize_only_if_bigger=False,
         )
 
-        self.thread_num = os.getenv("LAION_THREAD_NUM", 15)
-        self.num_proc = os.getenv("LAION_NUM_PROC", 20)
-        self.batched = os.getenv("LAION_BATCHED", True)
-        self.batch_size = os.getenv("LAION_BATCH_SIZE", 1000)
+        self.thread_num = os.getenv("CC3_THREAD_NUM", 20)
+        self.num_proc = os.getenv("CC3_NUM_PROC", 20)
+        self.batched = os.getenv("CC3_BATCHED", True)
+        self.batch_size = os.getenv("CC3_BATCH_SIZE", 100)
 
         return DatasetInfo(
-            description=_DESCRIPTION,
-            version=_VERSION,
             features=features,
+            supervised_keys=None,
+            citation=None,
+            description=_DESCRIPTION,
         )
 
     def _split_generators(self, dl_manager):
@@ -119,46 +120,49 @@ class KoCC3M(GeneratorBasedBuilder):
 
     def image_downloader(self, example):
         def downloader(data_row):
-            img_bytes, url, korean_caption = data_row
-            idx, io_stream, err = download_image_with_retry(
+            url, korean_caption, english_caption = data_row
+            _, io_stream, err = download_image_with_retry(
                 (0, url),
                 timeout=5,
                 retries=2,
                 user_agent_token=None,
                 disallowed_header_directives=False,
             )
-            if err:
-                semaphore.release()
-                return (None, None, None)
 
             img_bytes, _, _, orig_height, orig_width, err = self.resizer(io_stream)
-            if err:
+            if not (orig_height and orig_width):
+                semaphore.release()
+                return (None, None, None)
+            elif orig_height < 10 or orig_width < 10:
+                semaphore.release()
+                return (None, None, None)
+            elif err:
                 semaphore.release()
                 return (None, None, None)
 
             semaphore.release()
-            return img_bytes, english_caption, korean_caption
+            return img_bytes, korean_caption, english_caption
 
         def data_generator():
-            for laion_row in laion_zip:
+            for laion_row in cc12_zip:
                 semaphore.acquire()
                 yield laion_row
 
-        url_ls, english_caption_ls, korean_caption_ls = (
-            example["URL"] if isinstance(example["URL"], list) else [example["URL"]],
+        url_ls, korean_caption_ls, english_caption_ls = (
+            example["image_url"] if isinstance(example["image_url"], list) else [example["image_url"]],
+            example["korean_caption"] if isinstance(example["korean_caption"], list) else [example["korean_caption"]],
             example["english_caption"]
             if isinstance(example["english_caption"], list)
             else [example["english_caption"]],
-            example["korean_caption"] if isinstance(example["korean_caption"], list) else [example["korean_caption"]],
         )
 
         semaphore = Semaphore(self.thread_num * 2)
         loader = data_generator()
         finish_data_ls = list()
-        laion_zip = zip(url_ls, english_caption_ls, korean_caption_ls)
+        cc12_zip = zip(url_ls, korean_caption_ls, english_caption_ls)
         with ThreadPool(self.thread_num) as thread_pool:
             thead_iter = thread_pool.imap_unordered(downloader, loader)
-            for img_bytes, english_caption, korean_caption in thead_iter:
+            for img_bytes, korean_caption, english_caption in thead_iter:
                 if not img_bytes:
                     continue
 
@@ -174,7 +178,7 @@ class KoCC3M(GeneratorBasedBuilder):
                     "caption": korean_caption,
                     "caption_ls": [korean_caption],
                     "category": None,
-                    "english_caption": english_caption,
+                    "en_caption": english_caption,
                 }
                 finish_data_ls.append(data)
 
