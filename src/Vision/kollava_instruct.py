@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import re
 from pathlib import Path
 from tarfile import TarFile
 from zipfile import ZipExtFile, ZipFile
 
 import requests
 from datasets import (
+    BuilderConfig,
     DatasetInfo,
     Features,
     GeneratorBasedBuilder,
@@ -28,24 +30,33 @@ URLS = {
     "coco_image": "http://images.cocodataset.org/zips/train2017.zip",
 }
 
+_DESCRIPTION = """LLaVA-v1.5의 Instruction-following Data에서 필요한 데이터를 필터링하고, 한국어로 번역한 데이터셋입니다. (feat. DeepL)"""
+_VERSION = "1.0.0"
+
+
 DATASET_KEY = "71357"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
 DATASET_SIZE = 11.55
 
 
 class KoLLaVAInsturct(GeneratorBasedBuilder):
-    VERSION = Version("1.1.0")
+    BUILDER_CONFIGS = [
+        BuilderConfig(name="chat", version=_VERSION, description=_DESCRIPTION),
+    ]
+
+    DEFAULT_CONFIG_NAME = "chat"
 
     def _info(self):
+        features = Features(
+            {
+                "id": Value("string"),
+                "image": Image(),
+                "conversations": [{"role": Value("string"), "content": Value("string")}],
+            }
+        )
         return DatasetInfo(
-            features=Features(
-                {
-                    "image": Image(),
-                    "conversations": [{"role": Value("string"), "content": Value("string")}],
-                    "id": Value("string"),
-                }
-            ),
-            supervised_keys=None,
+            features=features,
+            version=Version(_VERSION),
         )
 
     def aihub_downloader(self, destination_path: Path) -> None:
@@ -183,22 +194,33 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, label_ls, image_dict):
-        for idx, x in enumerate(label_ls):
-            if x["image"] not in image_dict:
+        def convert_mm_content(content: str, img_token: str):
+            img_split_regex = re.compile(rf"{img_token}|[^{img_token}]+")
+
+            new_content_ls = list()
+            for split_chat in img_split_regex.findall(content):
+                new_content = {"type": "image"} if split_chat == img_token else {"type": "text", "text": split_chat}
+                new_content_ls.append(new_content)
+
+            return new_content_ls
+
+        for idx, data in enumerate(label_ls):
+            if data["image"] not in image_dict:
                 continue
 
-            image = image_dict[x["image"]]
-            if isinstance(image, ZipExtFile):
-                image = image.read()
-            else:
-                image = image.read_bytes()
-            x["image"] = image
-
             new_conversations_ls = list()
-            for y in x["conversations"]:
-                role = "user" if y["from"] == "human" else "assistant"
-                new_conversations_ls.append({"role": role, "content": y["value"].replace("<image>", "").strip()})
+            for chat in data["conversations"]:
+                new_conversations_ls.append(
+                    {
+                        "role": "user" if chat["from"] == "human" else "assistant",
+                        "content": json.dumps(convert_mm_content(chat["value"], "<image>"), ensure_ascii=False),
+                    }
+                )
 
-            x["conversations"] = new_conversations_ls
+            data = {
+                "id": data["id"],
+                "image": image_dict[data["image"]].read_bytes(),
+                "conversations": new_conversations_ls,
+            }
 
-            yield (idx, x)
+            yield (idx, data)
