@@ -1,6 +1,6 @@
 import json
 import os
-import sys
+import warnings
 from pathlib import Path
 from typing import List
 
@@ -14,24 +14,25 @@ from datasets import (
     Value,
     Version,
 )
+from datasets.config import DEFAULT_MAX_BATCH_SIZE
 from PIL import Image as PIL_Image
 
 from transformers.trainer_pt_utils import get_length_grouped_indices
 
 
 URLS = {
-    "ChartQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/ChartQA.tar?download=true",
-    "DeepForm": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/DeepForm.tar?download=true",
-    "DocVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/DocVQA.tar?download=true",
-    "InfographicsVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/InfographicsVQA.tar?download=true",
-    "KleisterCharity": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/KleisterCharity.tar?download=true",
-    "TabFact": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TabFact.tar?download=true",
-    "TextCaps": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TextCaps.tar?download=true",
-    "TextVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TextVQA.tar?download=true",
-    "VisualMRC": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/VisualMRC.tar?download=true",
-    "WikiTableQuestions": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/WikiTableQuestions.tar?download=true",
-    "benchmark_files": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/benchmark_files.zip?download=true",
-    "ureader_json": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/ureader_json.zip?download=true",
+    "WikiTableQuestions": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/WikiTableQuestions.tar",
+    "InfographicsVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/InfographicsVQA.tar",
+    "KleisterCharity": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/KleisterCharity.tar",
+    "benchmark_files": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/benchmark_files.zip",
+    "ureader_json": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/ureader_json.zip",
+    "VisualMRC": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/VisualMRC.tar",
+    "DeepForm": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/DeepForm.tar",
+    "TextCaps": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TextCaps.tar",
+    "TabFact": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TabFact.tar",
+    "ChartQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/ChartQA.tar",
+    "TextVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TextVQA.tar",
+    "DocVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/DocVQA.tar",
 }
 
 
@@ -112,34 +113,46 @@ class UReaderInstruction(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, filepath: List[dict], split: str):
-        check_dict = dict()
-        test = [os.path.getsize(x["image"][0]) for x in filepath]
-        test = get_length_grouped_indices(test, 1, mega_batch_mult=1000)
-        for idx, x in enumerate(test):
-            x = filepath[x]
-            image_path = str(x["image"][0])
+        img_size_ls = [os.path.getsize(x["image"][0]) for x in filepath]
+        img_size_ls = get_length_grouped_indices(
+            img_size_ls,
+            batch_size=1,
+            mega_batch_mult=DEFAULT_MAX_BATCH_SIZE,
+        )
 
-            conversations = list()
-            for chat in x["conversations"]:
-                if chat["value"] == "<image>":
-                    continue
-                chat = {"role": chat["from"], "content": chat["value"]}
-                conversations.append(chat)
+        for idx, data_idx in enumerate(img_size_ls):
+            dataset = filepath[data_idx]
 
-            try:
-                img = PIL_Image.open(image_path)
-                PIL_Image._decompression_bomb_check(img.size)
-            except:
-                print("pass")
+            if len(dataset["image"]) >= 2:
+                warnings.warn("해당 데이터의 이미지는 두개임.")
                 continue
 
-            image_bytes = Path(image_path).read_bytes()
+            img_path = dataset["image"][0]
+            conversations = dataset["conversations"]
+
+            # 모든 데이터가 싱글턴이라, 이렇게 만들어도 됨.
+            user_conversations = [chat for chat in conversations if chat["from"] == "user"]
+            assistant_conversations = [
+                {
+                    "role": "assistant",
+                    "content": json.dumps([{"content": "text", "text": chat["value"]}], ensure_ascii=False),
+                }
+                for chat in conversations
+                if chat["from"] == "assistant"
+            ]
+
+            new_contents = list()
+            for chat in user_conversations:
+                content = {"type": "image"} if chat["value"] == "<image>" else {"type": "text", "text": chat["value"]}
+                new_contents.append(content)
+
+            new_conversations = [{"role": "user", "content": json.dumps(new_contents, ensure_ascii=False)}]
+            new_conversations.extend(assistant_conversations)
 
             data = {
-                "image": image_bytes,
-                "conversations": conversations,
-                "metadata": {"source": x["date_from"]},
+                "image": img_path.read_bytes(),
+                "conversations": new_conversations,
+                "metadata": {"source": dataset["date_from"]},
             }
 
             yield (idx, data)
-            check_dict[image_path] = conversations

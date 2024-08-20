@@ -187,32 +187,36 @@ class MPaper(GeneratorBasedBuilder):
                 except:
                     semaphore.release()
                     return None, None, None
-
-            conversation_ls = list()
-            for chat in conversations:
-                if "<image>" in chat["value"] and chat["from"] == "user":
+            user_conversations = [chat for chat in conversations if chat["from"] == "user"]
+            assistant_conversations = [
+                {
+                    "role": "assistant",
+                    "content": json.dumps([{"type": "text", "text": chat["value"]}], ensure_ascii=False),
+                }
+                for chat in conversations
+                if chat["from"] == "assistant"
+            ]
+            new_user_conversations = list()
+            for chat in user_conversations:
+                if "<image>" in chat["value"]:
                     img_split_chat = chat["value"].split("<image>")
                     img_split_chat = [txt.replace("<|context|>: ", "").strip() for txt in img_split_chat]
                     img_split_chat = [txt for txt in img_split_chat if txt]
-
                     new_chat_content_ls = list()
                     new_chat_content_ls.append({"type": "text", "text": img_split_chat[0]})
                     for idx in range(1, len(img_split_chat)):
                         txt = img_split_chat[idx]
-
                         new_chat_content_ls.append({"type": "image"})
                         new_chat_content_ls.append({"type": "text", "text": txt})
+                else:
+                    new_chat_content_ls = [{"type": "text", "text": chat["value"]}]
 
-                    chat["value"] = json.dumps(new_chat_content_ls, ensure_ascii=False)
-                elif chat["from"] == "assistant" and "<image>" in chat["value"]:
-                    warnings.warn(
-                        "assistant에 img가 있음! 확인 바람.",
-                        f"""{chat["value"]}""",
-                    )
+                new_user_conversations.extend(new_chat_content_ls)
+            new_user_conversations = [
+                {"role": "user", "content": json.dumps(new_user_conversations, ensure_ascii=True)}
+            ]
 
-                chat = {"role": chat["from"], "content": chat["value"]}
-                conversation_ls.append(chat)
-
+            conversation_ls = new_user_conversations + assistant_conversations
             semaphore.release()
             return sample_id, loaded_image_ls, conversation_ls
 

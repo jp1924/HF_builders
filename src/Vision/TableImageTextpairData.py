@@ -249,7 +249,10 @@ class TableImageTextpairData(GeneratorBasedBuilder):
                         "role": "user",
                         "content": json.dumps([{"type": "image"}]),
                     },
-                    {"role": "assistant", "content": " ".join(text_summary)},
+                    {
+                        "role": "assistant",
+                        "content": json.dumps([{"type": "text", "text": " ".join(text_summary)}], ensure_ascii=False),
+                    },
                 ]
 
                 data = {

@@ -244,9 +244,12 @@ class ChartImageTextpairData(GeneratorBasedBuilder):
                 conversations = [
                     {
                         "role": "user",
-                        "content": json.dumps([{"type": "image"}]),
+                        "content": json.dumps([{"type": "image"}], ensure_ascii=False),
                     },
-                    {"role": "assistant", "content": label["description"]},
+                    {
+                        "role": "assistant",
+                        "content": json.dumps([{"type": "text", "text": label["description"]}], ensure_ascii=False),
+                    },
                 ]
 
                 data = {
