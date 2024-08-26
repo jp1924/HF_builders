@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 
 URLS = {
-    "label": "https://huggingface.co/datasets/tabtoyou/KoLLaVA-v1.5-Instruct-581k/resolve/main/kollava_v1_5_mix581k.json?download=true",
+    "label": "https://huggingface.co/datasets/tabtoyou/KoLLaVA-v1.5-Instruct-581k/resolve/main/kollava_v1_5_mix581k.json",
     "VisualGenome_1": "https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip",
     "VisualGenome_2": "https://cs.stanford.edu/people/rak248/VG_100K_2/images2.zip",
     "GQA_image": "https://downloads.cs.stanford.edu/nlp/data/gqa/images.zip",
@@ -195,12 +195,22 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
 
     def _generate_examples(self, label_ls, image_dict):
         def convert_mm_content(content: str, img_token: str):
-            img_split_regex = re.compile(rf"{img_token}|[^{img_token}]+")
+            img_split_regex = re.compile(rf"{img_token}|.")
 
             new_content_ls = list()
-            for split_chat in img_split_regex.findall(content):
-                new_content = {"type": "image"} if split_chat == img_token else {"type": "text", "text": split_chat}
-                new_content_ls.append(new_content)
+            sentence = ""
+            for token in img_split_regex.findall(content):
+                if token == img_token:
+                    if sentence:
+                        new_content_ls.append({"type": "text", "text": sentence})
+                        sentence = ""
+                    new_content_ls.append({"type": "image"})
+                    continue
+
+                sentence += token
+            else:
+                if sentence:
+                    new_content_ls.append({"type": "text", "text": sentence})
 
             return new_content_ls
 
@@ -217,9 +227,10 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
                     }
                 )
 
+            image = image_dict[data["image"]]
             data = {
                 "id": data["id"],
-                "image": image_dict[data["image"]].read_bytes(),
+                "image": image.read() if isinstance(image, ZipExtFile) else image.read_bytes(),
                 "conversations": new_conversations_ls,
             }
 

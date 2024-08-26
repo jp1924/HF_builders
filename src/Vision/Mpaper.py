@@ -1,6 +1,6 @@
 import json
 import os
-import warnings
+import re
 from io import BytesIO
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
@@ -29,22 +29,22 @@ from transformers.trainer_pt_utils import get_length_grouped_indices
 
 
 IMG_URLS = {
-    "partial-imgs.00": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.00?download=true",
-    "partial-imgs.01": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.01?download=true",
-    "partial-imgs.02": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.02?download=true",
-    "partial-imgs.03": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.03?download=true",
-    "partial-imgs.04": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.04?download=true",
-    "partial-imgs.05": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.05?download=true",
-    "partial-imgs.06": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.06?download=true",
-    "partial-imgs.07": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.07?download=true",
-    "partial-imgs.08": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.08?download=true",
-    "partial-imgs.09": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.09?download=true",
-    "partial-imgs.10": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.10?download=true",
-    "partial-imgs.11": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.11?download=true",
-    "partial-imgs.12": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.12?download=true",
-    "partial-imgs.13": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.13?download=true",
-    "partial-imgs.14": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.14?download=true",
-    "partial-imgs.15": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.15?download=true",
+    "partial-imgs.00": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.00",
+    "partial-imgs.01": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.01",
+    "partial-imgs.02": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.02",
+    "partial-imgs.03": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.03",
+    "partial-imgs.04": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.04",
+    "partial-imgs.05": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.05",
+    "partial-imgs.06": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.06",
+    "partial-imgs.07": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.07",
+    "partial-imgs.08": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.08",
+    "partial-imgs.09": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.09",
+    "partial-imgs.10": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.10",
+    "partial-imgs.11": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.11",
+    "partial-imgs.12": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.12",
+    "partial-imgs.13": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.13",
+    "partial-imgs.14": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.14",
+    "partial-imgs.15": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.15",
 }
 
 LABEL_URLS = {
@@ -109,7 +109,7 @@ class MPaper(GeneratorBasedBuilder):
         download_path = cache_dir.joinpath("Mpaper.tar.gz")
         try:
             extract_path = dl_manager.extract(download_path)
-        except:
+        except BaseException as e:  # noqa: F841
             with open(download_path, "wb") as byte_f:
                 for _, part_path_ls in tqdm(shard_zip_dataset, desc="concat"):
                     part_bytes = Path(part_path_ls).read_bytes()
@@ -141,6 +141,86 @@ class MPaper(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, label_path: Path, image_path: Path):
+        def load_image_file(example, img_dir_path):
+            def convert_mm_content(content: str, img_token: str):
+                img_split_regex = re.compile(rf"{img_token}|.")
+
+                new_content_ls = list()
+                sentence = ""
+                for token in img_split_regex.findall(content):
+                    if token == img_token:
+                        if sentence:
+                            new_content_ls.append({"type": "text", "text": sentence})
+                            sentence = ""
+                        new_content_ls.append({"type": "image"})
+                        continue
+
+                    sentence += token
+                else:
+                    if sentence:
+                        new_content_ls.append({"type": "text", "text": sentence})
+
+                return new_content_ls
+
+            def downloader(data_row):
+                sample_id, image_ls, conversations = data_row
+
+                loaded_image_ls = list()
+                for img_path in image_ls:
+                    try:
+                        img_bytes = Path(img_dir_path, img_path).read_bytes()
+                        pil_image = PIL_Image.open(BytesIO(img_bytes))
+                        pil_image.verify()
+
+                        if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
+                            semaphore.release()
+                            return None, None, None
+
+                        loaded_image_ls.append(img_bytes)
+                    except BaseException as e:  # noqa: F841
+                        semaphore.release()
+                        return None, None, None
+
+                new_conversation_ls = list()
+                for chat in conversations:
+                    value = chat["value"].replace("<|context|>: ", "")
+                    content = convert_mm_content(value, "<image>")
+                    chat = {"role": chat["from"], "content": json.dumps(content, ensure_ascii=False)}
+                    new_conversation_ls.append(chat)
+
+                semaphore.release()
+                return sample_id, loaded_image_ls, new_conversation_ls
+
+            def data_generator():
+                for laion_row in Mpaper_zip:
+                    semaphore.acquire()
+                    yield laion_row
+
+            sample_id_ls, image_ls, conversations_ls = (
+                example["id"] if isinstance(example["id"], list) else [example["id"]],
+                example["image"] if isinstance(example["image"], list) else [example["image"]],
+                example["conversations"] if isinstance(example["conversations"], list) else [example["conversations"]],
+            )
+
+            semaphore = Semaphore(self.thread_num * 2)
+            loader = data_generator()
+            finish_data_ls = list()
+            Mpaper_zip = zip(sample_id_ls, image_ls, conversations_ls)
+            with ThreadPool(self.thread_num) as thread_pool:
+                thead_iter = thread_pool.imap_unordered(downloader, loader)
+                for sample_id, img_ls, conversations in thead_iter:
+                    if not img_ls:
+                        continue
+
+                    data = {
+                        "id": sample_id,
+                        "image": img_ls,
+                        "conversations": conversations,
+                    }
+                    finish_data_ls.append(data)
+
+            return pa.Table.from_pylist(finish_data_ls)
+
         datasets = Dataset.from_json(str(label_path))
         image_size_ls = [
             sum([image_path.joinpath(pth).stat().st_size for pth in pth_ls]) if pth_ls else 0
@@ -153,8 +233,12 @@ class MPaper(GeneratorBasedBuilder):
             batch_size=1,
             mega_batch_mult=DEFAULT_MAX_BATCH_SIZE,
         )
+
+        datasets = datasets.select(range(10000))
+        image_size_ls = image_size_ls[:10000]
+
         datasets = datasets.map(
-            self.load_image_file,
+            load_image_file,
             num_proc=self.num_proc,
             batched=self.batched,
             batch_size=self.batch_size,
@@ -163,86 +247,12 @@ class MPaper(GeneratorBasedBuilder):
             remove_columns=datasets.column_names,
             fn_kwargs={"img_dir_path": image_path},
         )
+        # idx_ = 0
+        # for idx in image_size_ls:
+        #     yield (idx_, datasets[idx])
+        #     idx_ += 1
+
         idx_ = 0
-        for idx in image_size_ls:
-            yield (idx_, datasets[idx])
+        for idx in range(len(datasets)):
+            yield (idx_, datasets.select([idx])[0])
             idx_ += 1
-
-    def load_image_file(self, example, img_dir_path):
-        def downloader(data_row):
-            sample_id, image_ls, conversations = data_row
-
-            loaded_image_ls = list()
-            for img_path in image_ls:
-                try:
-                    img_bytes = Path(img_dir_path, img_path).read_bytes()
-                    pil_image = PIL_Image.open(BytesIO(img_bytes))
-                    pil_image.verify()
-
-                    if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
-                        semaphore.release()
-                        return None, None, None
-
-                    loaded_image_ls.append(img_bytes)
-                except:
-                    semaphore.release()
-                    return None, None, None
-            user_conversations = [chat for chat in conversations if chat["from"] == "user"]
-            assistant_conversations = [
-                {
-                    "role": "assistant",
-                    "content": json.dumps([{"type": "text", "text": chat["value"]}], ensure_ascii=False),
-                }
-                for chat in conversations
-                if chat["from"] == "assistant"
-            ]
-            new_user_conversations = list()
-            for chat in user_conversations:
-                if "<image>" in chat["value"]:
-                    img_split_chat = chat["value"].split("<image>")
-                    img_split_chat = [txt.replace("<|context|>: ", "").strip() for txt in img_split_chat]
-                    img_split_chat = [txt for txt in img_split_chat if txt]
-                    new_chat_content_ls = list()
-                    new_chat_content_ls.append({"type": "text", "text": img_split_chat[0]})
-                    for idx in range(1, len(img_split_chat)):
-                        txt = img_split_chat[idx]
-                        new_chat_content_ls.append({"type": "image"})
-                        new_chat_content_ls.append({"type": "text", "text": txt})
-                else:
-                    new_chat_content_ls = [{"type": "text", "text": chat["value"]}]
-
-                new_user_conversations.extend(new_chat_content_ls)
-            new_user_conversations = [
-                {"role": "user", "content": json.dumps(new_user_conversations, ensure_ascii=True)}
-            ]
-
-            conversation_ls = new_user_conversations + assistant_conversations
-            semaphore.release()
-            return sample_id, loaded_image_ls, conversation_ls
-
-        def data_generator():
-            for laion_row in Mpaper_zip:
-                semaphore.acquire()
-                yield laion_row
-
-        sample_id_ls, image_ls, conversations_ls = (
-            example["id"] if isinstance(example["id"], list) else [example["id"]],
-            example["image"] if isinstance(example["image"], list) else [example["image"]],
-            example["conversations"] if isinstance(example["conversations"], list) else [example["conversations"]],
-        )
-
-        semaphore = Semaphore(self.thread_num * 2)
-        loader = data_generator()
-        finish_data_ls = list()
-        Mpaper_zip = zip(sample_id_ls, image_ls, conversations_ls)
-        with ThreadPool(self.thread_num) as thread_pool:
-            thead_iter = thread_pool.imap_unordered(downloader, loader)
-            for sample_id, img_ls, conversations in thead_iter:
-                data = {
-                    "id": sample_id,
-                    "image": img_ls,
-                    "conversations": conversations,
-                }
-                finish_data_ls.append(data)
-
-        return pa.Table.from_pylist(finish_data_ls)

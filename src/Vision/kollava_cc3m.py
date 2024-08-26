@@ -65,12 +65,22 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
 
     def _generate_examples(self, label_ls, image_dict):
         def convert_mm_content(content: str, img_token: str):
-            img_split_regex = re.compile(rf"{img_token}|[^{img_token}]+")
+            img_split_regex = re.compile(rf"{img_token}|.")
 
             new_content_ls = list()
-            for split_chat in img_split_regex.findall(content):
-                new_content = {"type": "image"} if split_chat == img_token else {"type": "text", "text": split_chat}
-                new_content_ls.append(new_content)
+            sentence = ""
+            for token in img_split_regex.findall(content):
+                if token == img_token:
+                    if sentence:
+                        new_content_ls.append({"type": "text", "text": sentence})
+                        sentence = ""
+                    new_content_ls.append({"type": "image"})
+                    continue
+
+                sentence += token
+            else:
+                if sentence:
+                    new_content_ls.append({"type": "text", "text": sentence})
 
             return new_content_ls
 
