@@ -200,7 +200,7 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
             new_content_ls = list()
             sentence = ""
             for token in img_split_regex.findall(content):
-                if token == img_token:
+                if re.match(img_token, token):
                     if sentence:
                         new_content_ls.append({"type": "text", "text": sentence})
                         sentence = ""

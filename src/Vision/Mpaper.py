@@ -148,7 +148,7 @@ class MPaper(GeneratorBasedBuilder):
                 new_content_ls = list()
                 sentence = ""
                 for token in img_split_regex.findall(content):
-                    if token == img_token:
+                    if re.match(img_token, token):
                         if sentence:
                             new_content_ls.append({"type": "text", "text": sentence})
                             sentence = ""
@@ -184,7 +184,7 @@ class MPaper(GeneratorBasedBuilder):
                 new_conversation_ls = list()
                 for chat in conversations:
                     value = chat["value"].replace("<|context|>: ", "")
-                    content = convert_mm_content(value, "<image>")
+                    content = convert_mm_content(value, r"<image>")
                     chat = {"role": chat["from"], "content": json.dumps(content, ensure_ascii=False)}
                     new_conversation_ls.append(chat)
 
@@ -202,24 +202,27 @@ class MPaper(GeneratorBasedBuilder):
                 example["conversations"] if isinstance(example["conversations"], list) else [example["conversations"]],
             )
 
+            finish_id_ls = list()
+            finish_image_ls = list()
+            finish_conversations_ls = list()
+
             semaphore = Semaphore(self.thread_num * 2)
             loader = data_generator()
-            finish_data_ls = list()
             Mpaper_zip = zip(sample_id_ls, image_ls, conversations_ls)
             with ThreadPool(self.thread_num) as thread_pool:
                 thead_iter = thread_pool.imap_unordered(downloader, loader)
                 for sample_id, img_ls, conversations in thead_iter:
                     if not img_ls:
                         continue
+                    finish_id_ls.append(sample_id)
+                    finish_image_ls.append(img_ls)
+                    finish_conversations_ls.append(conversations)
 
-                    data = {
-                        "id": sample_id,
-                        "image": img_ls,
-                        "conversations": conversations,
-                    }
-                    finish_data_ls.append(data)
-
-            return pa.Table.from_pylist(finish_data_ls)
+            return {
+                "id": finish_id_ls,
+                "image": finish_image_ls,
+                "conversations": finish_conversations_ls,
+            }
 
         datasets = Dataset.from_json(str(label_path))
         image_size_ls = [
@@ -234,9 +237,6 @@ class MPaper(GeneratorBasedBuilder):
             mega_batch_mult=DEFAULT_MAX_BATCH_SIZE,
         )
 
-        datasets = datasets.select(range(10000))
-        image_size_ls = image_size_ls[:10000]
-
         datasets = datasets.map(
             load_image_file,
             num_proc=self.num_proc,
@@ -247,12 +247,8 @@ class MPaper(GeneratorBasedBuilder):
             remove_columns=datasets.column_names,
             fn_kwargs={"img_dir_path": image_path},
         )
-        # idx_ = 0
-        # for idx in image_size_ls:
-        #     yield (idx_, datasets[idx])
-        #     idx_ += 1
 
         idx_ = 0
-        for idx in range(len(datasets)):
-            yield (idx_, datasets.select([idx])[0])
+        for data in datasets:
+            yield (idx_, data)
             idx_ += 1
