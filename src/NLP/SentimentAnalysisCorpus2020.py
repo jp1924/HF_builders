@@ -88,7 +88,7 @@ class SentimentAnalysisCorpus2020(GeneratorBasedBuilder):
         for posix_path in filepath:
             document_ls = json.loads(posix_path.read_text("utf-8"))["document"]
             for document in document_ls:
-                corpus = " ".join([paragraph["paragraph_form"] for paragraph in document_ls[0]["paragraph"]])
+                corpus = " ".join([paragraph["paragraph_form"] for paragraph in document["paragraph"]])
                 counted_obj = Counter([obj["subject_category"] for obj in document["sentiment_expression"]])
 
                 max_count_obj = max(dict(counted_obj).values())
