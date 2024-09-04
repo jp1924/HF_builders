@@ -1,12 +1,12 @@
 import json
 import os
 import re
+import warnings
 from io import BytesIO
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from threading import Semaphore
 
-import pyarrow as pa
 from datasets import (
     BuilderConfig,
     Dataset,
@@ -88,7 +88,7 @@ class MPaper(GeneratorBasedBuilder):
 
         self.thread_num = int(os.getenv("Mpaper_THREAD_NUM", "20"))
         self.num_proc = int(os.getenv("Mpaper_NUM_PROC", "20"))
-        self.batched = int(os.getenv("Mpaper_BATCHED", True))
+        self.batched = bool(os.getenv("Mpaper_BATCHED", True))
         self.batch_size = int(os.getenv("Mpaper_BATCH_SIZE", "100"))
 
         return DatasetInfo(
@@ -166,30 +166,49 @@ class MPaper(GeneratorBasedBuilder):
                 sample_id, image_ls, conversations = data_row
 
                 loaded_image_ls = list()
+                loaded_image_size_ls = list()
                 for img_path in image_ls:
                     try:
-                        img_bytes = Path(img_dir_path, img_path).read_bytes()
-                        pil_image = PIL_Image.open(BytesIO(img_bytes))
-                        pil_image.verify()
-
+                        with warnings.catch_warnings(record=True) as warn_ls:
+                            img_bytes = Path(img_dir_path, img_path).read_bytes()
+                            pil_image = PIL_Image.open(BytesIO(img_bytes))
+                            pil_image.verify()
+                            if warn_ls:
+                                # DecompressionBombWarning이나 파일 일부가 손상된 경우 warn이 발생함.
+                                # 특히 DecompressionBombWarning는 이미지가 너무 커서 문제가 발생하는 경우임.
+                                # 이미지 저장 및 업로드 시 문제가 발생하기 때문에 건너뜀.
+                                for warn in warn_ls:
+                                    print(f"{warn.message}가 발생함. 해당 샘플은 skip함.")
+                                semaphore.release()
+                                return None, None, None, None
                         if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
                             semaphore.release()
-                            return None, None, None
+                            return None, None, None, None
 
                         loaded_image_ls.append(img_bytes)
+                        loaded_image_size_ls.append(pil_image.width * pil_image.height)
                     except BaseException as e:  # noqa: F841
+                        print(f"{e}가 발생함. 해당 샘플은 skip함.")
                         semaphore.release()
-                        return None, None, None
+                        return None, None, None, None
 
+                img_token_num = 0
                 new_conversation_ls = list()
                 for chat in conversations:
                     value = chat["value"].replace("<|context|>: ", "")
                     content = convert_mm_content(value, r"<image>")
+
+                    img_token_num += len([chat for chat in content if chat["type"] == "image"])
+
                     chat = {"role": chat["from"], "content": json.dumps(content, ensure_ascii=False)}
                     new_conversation_ls.append(chat)
 
+                if img_token_num != len(loaded_image_ls):
+                    semaphore.release()
+                    return None, None, None, None
+
                 semaphore.release()
-                return sample_id, loaded_image_ls, new_conversation_ls
+                return sample_id, loaded_image_ls, new_conversation_ls, sum(loaded_image_size_ls)
 
             def data_generator():
                 for laion_row in Mpaper_zip:
@@ -204,6 +223,7 @@ class MPaper(GeneratorBasedBuilder):
 
             finish_id_ls = list()
             finish_image_ls = list()
+            finish_image_size_ls = list()
             finish_conversations_ls = list()
 
             semaphore = Semaphore(self.thread_num * 2)
@@ -211,44 +231,44 @@ class MPaper(GeneratorBasedBuilder):
             Mpaper_zip = zip(sample_id_ls, image_ls, conversations_ls)
             with ThreadPool(self.thread_num) as thread_pool:
                 thead_iter = thread_pool.imap_unordered(downloader, loader)
-                for sample_id, img_ls, conversations in thead_iter:
+                for sample_id, img_ls, conversations, img_size in thead_iter:
                     if not img_ls:
                         continue
+
                     finish_id_ls.append(sample_id)
                     finish_image_ls.append(img_ls)
                     finish_conversations_ls.append(conversations)
+                    finish_image_size_ls.append(img_size)
 
             return {
                 "id": finish_id_ls,
                 "image": finish_image_ls,
+                "image_size": finish_image_size_ls,
                 "conversations": finish_conversations_ls,
             }
 
         datasets = Dataset.from_json(str(label_path))
-        image_size_ls = [
-            sum([image_path.joinpath(pth).stat().st_size for pth in pth_ls]) if pth_ls else 0
-            for pth_ls in tqdm(datasets["image"], desc="estimate_size")
-        ]
-        # build시 한 arrow 파일에 과도한 용량이 집중되면, arrow로 저장이 되질 않을때가 있음.
-        # 애러를 방지하기 위해 arrow 파일마다 용량을 고르게 분배해서 부하를 피하기 위한 방법
-        image_size_ls = get_length_grouped_indices(
-            image_size_ls,
-            batch_size=1,
-            mega_batch_mult=DEFAULT_MAX_BATCH_SIZE,
-        )
-
         datasets = datasets.map(
             load_image_file,
             num_proc=self.num_proc,
             batched=self.batched,
             batch_size=self.batch_size,
-            features=self.features,
             load_from_cache_file=True,
             remove_columns=datasets.column_names,
             fn_kwargs={"img_dir_path": image_path},
         )
 
+        # build시 한 arrow 파일에 과도한 용량이 집중되면, arrow로 저장이 되질 않을때가 있음.
+        # 애러를 방지하기 위해 arrow 파일마다 용량을 고르게 분배해서 부하를 피하기 위한 방법
+        image_size_ls = get_length_grouped_indices(
+            datasets["image_size"],
+            batch_size=1,
+            mega_batch_mult=DEFAULT_MAX_BATCH_SIZE,
+        )
+
         idx_ = 0
-        for data in datasets:
+        for idx in image_size_ls:
+            data = datasets[idx]
+            del data["image_size"]
             yield (idx_, data)
             idx_ += 1
