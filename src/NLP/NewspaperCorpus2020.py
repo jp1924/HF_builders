@@ -1,15 +1,13 @@
 import json
 import os
-from collections import Counter
 from pathlib import Path
 from typing import List
 
 from datasets import BuilderConfig, DatasetInfo, Features, GeneratorBasedBuilder, Split, SplitGenerator, Value
-from kss import Kss
 
 
 DESCRIPTION = "2019년 생산된 신문 기사 580,152건"
-HOMEPAGE = "hhttps://kli.korean.go.kr/corpus/main/requestMain.do?tabType=thumb&lang=ko&keyword=%EC%8B%A0%EB%AC%B8%20%EB%A7%90%EB%AD%89%EC%B9%98%202020#down"
+HOMEPAGE = "https://kli.korean.go.kr/corpus/main/requestMain.do?tabType=thumb&lang=ko&keyword=%EC%8B%A0%EB%AC%B8%20%EB%A7%90%EB%AD%89%EC%B9%98%202020#down"
 LICENSE = "https://kli.korean.go.kr/corpus/boards/termsInfo.do"
 VERSION = "1.0.0"
 
