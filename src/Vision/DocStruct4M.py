@@ -18,9 +18,9 @@ from datasets import (
     SplitGenerator,
     Value,
     Version,
+    concatenate_datasets,
 )
 from datasets.config import DEFAULT_MAX_BATCH_SIZE
-from img2dataset.resizer import Resizer
 from natsort import natsorted
 from PIL import Image as PIL_Image
 from tqdm import tqdm
@@ -72,17 +72,11 @@ class DocStruct4M(GeneratorBasedBuilder):
             }
         )
 
-        self.resizer = Resizer(
-            image_size=256,
-            resize_mode="no",
-            min_image_size=10,
-            resize_only_if_bigger=False,
-        )
-
         self.thread_num = int(os.getenv("DocStruct4M_THREAD_NUM", "20"))
         self.num_proc = int(os.getenv("DocStruct4M_NUM_PROC", "20"))
         self.batched = int(os.getenv("DocStruct4M_BATCHED", True))
         self.batch_size = int(os.getenv("DocStruct4M_BATCH_SIZE", "100"))
+        self.shard_num = int(os.getenv("DocStruct4M_SHARD_NUM", "5"))
 
         return DatasetInfo(
             description=_DESCRIPTION,
@@ -158,15 +152,21 @@ class DocStruct4M(GeneratorBasedBuilder):
             def downloader(data_row):
                 id_, image_ls, conversations, dataset_name, task_name = data_row
 
-                if len(image_ls) > 1:
-                    return None, None, None, None, None, None
+                # if len(image_ls) > 1:
+                #     return None, None, None, None, None, None
 
                 loaded_image_ls = list()
                 loaded_image_size_ls = list()
                 for img_path in image_ls:
                     try:
                         with warnings.catch_warnings(record=True) as warn_ls:
-                            img_bytes = Path(img_dir_path, img_path).read_bytes()
+                            img_path = Path(img_dir_path, img_path)
+                            if not img_path.exists():
+                                print(f"{img_path}가 발생함. 해당 샘플은 skip함.")
+                                semaphore.release()
+                                return None, None, None, None, None, None
+
+                            img_bytes = img_path.read_bytes()
                             pil_image = PIL_Image.open(BytesIO(img_bytes))
                             pil_image.verify()
 
@@ -176,13 +176,16 @@ class DocStruct4M(GeneratorBasedBuilder):
                                 # 이미지 저장 및 업로드 시 문제가 발생하기 때문에 건너뜀.
                                 for warn in warn_ls:
                                     print(f"{warn.message}가 발생함. 해당 샘플은 skip함.")
+                                pil_image.close()
                                 semaphore.release()
                                 return None, None, None, None, None, None
-                        
+
                         if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
+                            pil_image.close()
                             semaphore.release()
                             return None, None, None, None, None, None
 
+                        pil_image.close()
                         loaded_image_ls.append(img_bytes)
                         loaded_image_size_ls.append(pil_image.width * pil_image.height)
                     except BaseException as e:  # noqa: F841
@@ -196,8 +199,11 @@ class DocStruct4M(GeneratorBasedBuilder):
                     content = convert_mm_content(chat["content"], r"<\|image\|>")
 
                     img_token_num += len([chat for chat in content if chat["type"] == "image"])
-                    
-                    chat = {"role": chat["role"], "content": json.dumps(content, ensure_ascii=False)}
+
+                    chat = {
+                        "role": chat["role"],
+                        "content": json.dumps(content, ensure_ascii=False),
+                    }
                     new_conversation_ls.append(chat)
 
                 if img_token_num != len(loaded_image_ls):
@@ -205,19 +211,26 @@ class DocStruct4M(GeneratorBasedBuilder):
                     return None, None, None, None, None, None
 
                 semaphore.release()
-                return id_, loaded_image_ls[0], new_conversation_ls, dataset_name, task_name, sum(loaded_image_size_ls)
+                return (
+                    id_,
+                    loaded_image_ls[0],
+                    new_conversation_ls,
+                    dataset_name,
+                    task_name,
+                    sum(loaded_image_size_ls),
+                )
 
             def data_generator():
-                for laion_row in DocStruct4M_zip:
+                for doc_struct_row in DocStruct4M_zip:
                     semaphore.acquire()
-                    yield laion_row
+                    yield doc_struct_row
 
             id_ls, image_ls, messages_ls, dataset_name_ls, task_name_ls = (
                 example["id"] if isinstance(example["id"], list) else [example["id"]],
                 example["image"] if isinstance(example["image"], list) else [example["image"]],
-                example["messages"] if isinstance(example["messages"], list) else [example["messages"]],
-                example["dataset_name"] if isinstance(example["dataset_name"], list) else [example["dataset_name"]],
-                example["task_name"] if isinstance(example["task_name"], list) else [example["task_name"]],
+                (example["messages"] if isinstance(example["messages"], list) else [example["messages"]]),
+                (example["dataset_name"] if isinstance(example["dataset_name"], list) else [example["dataset_name"]]),
+                (example["task_name"] if isinstance(example["task_name"], list) else [example["task_name"]]),
             )
 
             finish_id_ls = list()
@@ -262,15 +275,23 @@ class DocStruct4M(GeneratorBasedBuilder):
                 labels.append(line)
 
         datasets = Dataset.from_list(labels)
-        datasets = datasets.map(
-            load_image_file,
-            num_proc=self.num_proc,
-            batched=self.batched,
-            batch_size=self.batch_size,
-            load_from_cache_file=True,
-            remove_columns=datasets.column_names,
-            fn_kwargs={"img_dir_path": image_path},
-        )
+
+        finish_shard_ls = list()
+        for shard_idx in range(self.shard_num):
+            shard_datasets = datasets.shard(num_shards=self.shard_num, index=shard_idx)
+            shard_datasets = shard_datasets.map(
+                load_image_file,
+                num_proc=self.num_proc,
+                batched=self.batched,
+                batch_size=self.batch_size,
+                load_from_cache_file=True,
+                remove_columns=datasets.column_names,
+                fn_kwargs={"img_dir_path": image_path},
+                desc=f"DocStruct4M-{shard_idx}/{self.shard_num}",
+            )
+            finish_shard_ls.append(shard_datasets)
+
+        datasets = concatenate_datasets(finish_shard_ls)
         image_size_ls = get_length_grouped_indices(
             datasets["image_size"],
             batch_size=1,
