@@ -218,14 +218,22 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
             if data["image"] not in image_dict:
                 continue
 
+            img_token_check_ls = list()
             new_conversations_ls = list()
             for chat in data["conversations"]:
+                mm_content = convert_mm_content(chat["value"], "<image>")
                 new_conversations_ls.append(
                     {
                         "role": "user" if chat["from"] == "human" else "assistant",
-                        "content": json.dumps(convert_mm_content(chat["value"], "<image>"), ensure_ascii=False),
+                        "content": json.dumps(mm_content, ensure_ascii=False),
                     }
                 )
+                img_token_check_ls.append({"type": "image"} in mm_content)
+            if not any(img_token_check_ls):
+                # img token이 없는 경우엔 필터링 함.
+                print("데이터에 img_token이 없어서 필터링 함.")
+                print(data["conversations"])
+                continue
 
             image = image_dict[data["image"]]
             data = {
