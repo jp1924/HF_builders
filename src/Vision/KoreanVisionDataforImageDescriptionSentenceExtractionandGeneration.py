@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import io
 import json
 import os
 import random
@@ -18,9 +19,16 @@ from datasets import (
     SplitGenerator,
     Value,
 )
+from datasets.config import DEFAULT_MAX_BATCH_SIZE
 from natsort import natsorted
+from PIL import Image as PIL_Image
 from tqdm import tqdm
 
+from transformers import set_seed
+from transformers.trainer_pt_utils import get_length_grouped_indices
+
+
+set_seed(42)
 
 _LICENSE = """
 AI 데이터 허브에서 제공되는 인공지능 학습용 데이터(이하 ‘AI데이터’라고 함)는 과학기술정보통신부와 한국지능정보사회진흥원의 「지능정보산업 인프라 조성」 사업의 일환으로 구축되었으며, 본 사업의 유‧무형적 결과물인 데이터, AI응용모델 및 데이터 저작도구의 소스, 각종 매뉴얼 등(이하 ‘AI데이터 등’)에 대한 일체의 권리는 AI데이터 등의 구축 수행기관 및 참여기관(이하 ‘수행기관 등’)과 한국지능정보사회진흥원에 있습니다.
@@ -220,142 +228,76 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
         ]
 
     def _caption_generate_examples(self, filepath: List[Path], split: str):
-        random.seed(42)
+        source_zip_ls = [ZipFile(path) for path in filepath if "원천데이터" in path.as_posix()]
+        source_zip_ls = [source_zip for source_zip in source_zip_ls if "(영상)" not in source_zip.filename]
+        source_zip_ls = natsorted(source_zip_ls, key=lambda path: path.filename)
 
-        def get_file_type(filename: str) -> str:
-            start_idx = filename.rindex("라벨링데이터") + len("라벨링데이터/")
-            end_idx = filename.rindex("_image(")
-            file_type = filename[start_idx:end_idx]
+        label_zip_ls = [ZipFile(path) for path in filepath if "라벨링데이터" in path.as_posix()]
+        label_zip_ls = [label_zip for label_zip in label_zip_ls if "(영상)" not in label_zip.filename]
+        label_zip_ls = [label_zip for label_zip in label_zip_ls if "TL_라벨링_데이터_" in label_zip.filename]
+        label_zip_ls = natsorted(label_zip_ls, key=lambda path: path.filename)
 
-            return file_type
+        # # /IMG_1580162_air_conditioner(air_conditioner(ceiling)).jpg 이레 생겨서 슬라이싱 함.
+        source_info_dict = {
+            file_info.filename[1:]: (file_info, Path(source_zip.filename).stem)
+            for source_zip in tqdm(source_zip_ls)
+            for file_info in source_zip.filelist
+            if not file_info.is_dir()
+        }
+        source_zip_dict = {Path(source_zip.filename).stem: source_zip for source_zip in source_zip_ls}
+        label_zip_dict = {Path(label_zip.filename).stem: label_zip for label_zip in label_zip_ls}
+        resolution_ls, label_ls = list(), list()
 
-        source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x)]
-        label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
+        for label_zip in tqdm(label_zip_ls):
+            for label_zip_info in label_zip.filelist:
+                label = json.loads(label_zip.open(label_zip_info).read().decode("utf-8"))
+                image_info = label["images"][0]
 
-        source_ls = natsorted(source_ls, key=lambda x: x.filename)
-        label_ls = natsorted(label_ls, key=lambda x: x.filename)
+                label_ls.append((label_zip_info, Path(label_zip.filename).stem))
+                resolution_ls.append(image_info["height"] * image_info["width"])
 
-        label_dict = dict()
-        for label_zip in label_ls:
-            if "(영상)" in label_zip.filename:
-                print(f"{label_zip.filename}는 HF datasets가 영상 데이터를 처리할 수 없기 때문에 스킵함.")
+        resolution_ls = get_length_grouped_indices(
+            resolution_ls,
+            batch_size=1,
+            mega_batch_mult=DEFAULT_MAX_BATCH_SIZE,
+        )
+
+        for idx, label_idx in enumerate(resolution_ls):
+            label_zip_info, label_zip_name = label_ls[label_idx]
+            label = json.loads(label_zip_dict[label_zip_name].open(label_zip_info).read().decode("utf-8"))
+            image_info = label["images"][0]
+
+            zip_file_info, source_zip_name = source_info_dict[image_info["file_name"]]
+            source_zip = source_zip_dict[source_zip_name]
+
+            try:
+                img_io = io.BytesIO(source_zip.open(zip_file_info).read())
+                image = PIL_Image.open(img_io)
+                image = image.convert("RGB")
+            except BaseException as e:
                 continue
-            file_type = get_file_type(label_zip.filename)
-            file_name = Path(label_zip.filename).stem.split(")_")[-1]
-            if "라벨링_데이터" in file_type:
-                label_dict[file_name] = label_zip
 
-        source_data_dict = dict()
-        for source_zip in source_ls:
-            file_name = Path(source_zip.filename).stem.split(")_")[-1]
-            source_data_dict[file_name] = source_zip
+            caption_ko_ls = [x["korean"] for x in label["annotations"]]
+            caption_en_ls = [x["english"] for x in label["annotations"]]
 
-        idx_counter = 0
-        for label_prefix, label_zip in label_dict.items():
-            source_zip = source_data_dict[label_prefix]
-            source_info_dict = {info.filename.replace("/", ""): info for info in source_zip.filelist}
+            category = random.choice(label["categories"])
 
-            for info in label_zip.filelist:
-                label_byte = label_zip.open(info).read()
-                label = json.loads(label_byte.decode("utf-8"))
+            label["info"]["width"] = image_info["width"]
+            label["info"]["height"] = image_info["height"]
+            label["info"]["file_name"] = image_info["file_name"]
+            label["info"]["supercategory"] = category["supercategory"]
 
-                if len(label["images"]) >= 2:
-                    print(info)
-                    print(label)
-                    raise ValueError("images가 2개임!!!! 확인 필요")
+            data = {
+                "id": int(image_info["id"]),
+                "image": image,
+                "caption": random.choice(caption_ko_ls),
+                "caption_ls": caption_ko_ls,
+                "category": category["name"],
+                "en_caption": caption_en_ls,
+                "metadata": label["info"],
+            }
 
-                file_name = label["images"][0]["file_name"]
-                if file_name not in source_info_dict:
-                    print(f"{file_name}: was skip")
-                    continue
-
-                source_info = source_info_dict[file_name]
-                image_byte = source_zip.open(source_info).read()
-
-                image_info = label.pop("images")[0]
-
-                caption_ko_ls = [x["korean"] for x in label["annotations"]]
-                caption_en_ls = [x["english"] for x in label["annotations"]]
-
-                category = random.choice(label["categories"])
-
-                label["info"]["width"] = image_info["width"]
-                label["info"]["height"] = image_info["height"]
-                label["info"]["file_name"] = image_info["file_name"]
-                label["info"]["supercategory"] = category["supercategory"]
-                data = {
-                    "id": int(image_info["id"]),
-                    "image": image_byte,
-                    "caption": random.choice(caption_ko_ls),
-                    "caption_ls": caption_ko_ls,
-                    "category": category["name"],
-                    "en_caption": caption_en_ls,
-                    "metadata": label["info"],
-                }
-
-                yield (idx_counter, data)
-                idx_counter += 1
-
-        return
-
-    def _object_generate_examples(self, filepath: List[Path], split: str):
-        def get_file_type(filename: str) -> str:
-            start_idx = filename.rindex("라벨링데이터") + len("라벨링데이터/")
-            end_idx = filename.rindex("_image(")
-            file_type = filename[start_idx:end_idx]
-
-            return file_type
-
-        source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x)]
-        label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
-
-        source_ls = natsorted(source_ls, key=lambda x: x.filename)
-        label_ls = natsorted(label_ls, key=lambda x: x.filename)
-
-        label_dict = dict()
-        for label_zip in label_ls:
-            file_type = get_file_type(label_zip.filename)
-            file_name = Path(label_zip.filename).stem.split(")_")[-1]
-            if "객체정보_메타데이터" in file_type:
-                label_dict[file_name] = label_zip
-
-        source_data_dict = dict()
-        for source_zip in source_ls:
-            file_name = Path(source_zip.filename).stem.split(")_")[-1]
-            source_data_dict[file_name] = source_zip
-
-        idx_counter = 0
-        for label_prefix, label_zip in label_dict.items():
-            source_zip = source_data_dict[label_prefix]
-            source_info_dict = {info.filename.replace("/", ""): info for info in source_zip.filelist}
-
-            for info in label_zip.filelist:
-                label_byte = label_zip.open(info).read()
-                label = json.loads(label_byte.decode("utf-8"))
-
-                if len(label["images"]) >= 2:
-                    print(info)
-                    print(label)
-                    raise ValueError("images가 2개임!!!! 확인 필요")
-
-                file_name = label["images"][0]["file_name"]
-                if file_name not in source_info_dict:
-                    print(f"{file_name}: was skip")
-                    continue
-
-                source_info = source_info_dict[file_name]
-                image_byte = source_zip.open(source_info).read()
-
-                image_info = label.pop("images")[0]
-
-                label["id"] = image_info["id"]
-                label["height"] = image_info["height"]
-                label["width"] = image_info["width"]
-                label["file_name"] = image_info["file_name"]
-                label["image"] = image_byte
-
-                yield (idx_counter, label)
-                idx_counter += 1
+            yield (idx, data)
 
     def _generate_examples(self, **kwargs):
         if self.config.name == "caption":
