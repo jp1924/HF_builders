@@ -1,9 +1,9 @@
+# -*- coding: utf-8 -*-
 import json
 import os
-import random
 from pathlib import Path
 from tarfile import TarFile
-from typing import Generator, List
+from typing import List
 from zipfile import ZipFile
 
 import requests
@@ -12,11 +12,11 @@ from datasets import (
     DatasetInfo,
     Features,
     GeneratorBasedBuilder,
-    Image,
     Split,
     SplitGenerator,
     Value,
 )
+from kss import Kss
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -29,78 +29,72 @@ AI 데이터 허브에서 제공되는 인공지능 학습용 데이터(이하 �
 
 _CITATION = None
 
-_DESCRIPTION = """\
-차트 이미지에 대한 해석 데이터를 생성하며 차트 정보 추론이 가능한 서비스를 구축하는데 사용할 수 있는 인공지능 학습용 데이터 구축"""
+_DESCRIPTION = (
+    """테이블이 포함된 일반 문서 내에서 표 내의 특정 값을 탐색하기 위한 기계학습용 질의어와 정답 세트 데이터"""
+)
 
 
-DATASET_KEY = "71706"
+DATASET_KEY = "110"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
 _HOMEPAGE = (
     f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
 )
 
-_VERSION = "1.0.0"
-_DATANAME = "ChartImageTextpairData"
-DATASET_SIZE = 11.00
+_VERSION = "1.1.0"
+_DATANAME = "DomainSpecificCorpus"
+DATASET_SIZE = 13.63
 
 
-class ChartImageTextpairData(GeneratorBasedBuilder):
+class DomainSpecificCorpus(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="caption", version=_VERSION, description="캡션 데이터"),
+        BuilderConfig(name="ko", version=_VERSION, description=_DESCRIPTION),
+        BuilderConfig(name="en", version=_VERSION, description=_DESCRIPTION),
     ]
-
-    DEFAULT_CONFIG_NAME = "caption"
+    DEFAULT_CONFIG_NAME = "ko"
 
     def _info(self) -> DatasetInfo:
-        features = Features(
-            {
-                "id": Value("int32"),
-                "image": Image(),
-                "conversations": [
-                    {
-                        "role": Value("string"),
-                        "content": Value("string"),
-                    },
-                ],
-                "metadata": {
-                    "image_id": Value("int32"),
-                    "data_category": Value("string"),
-                    "chart_source": Value("string"),
-                    "chart_color": Value("string"),
-                    "chart_multi": Value("string"),
-                    "chart_year": Value("string"),
-                    "chart_main": Value("string"),
-                    "chart_sub": Value("string"),
-                    "width": Value("int32"),
-                    "height": Value("int32"),
-                    "annotations": [
+        if self.config.name == "ko":
+            features = Features(
+                {
+                    "id": Value("int32"),
+                    "corpus": Value("string"),
+                    "category": Value("string"),
+                    "sentence_ls": [Value("string")],
+                    "title": Value("string"),
+                    "rows": [
                         {
-                            "image_id": Value("int32"),
-                            "is_title": Value("bool"),
-                            "is_legend": Value("bool"),
-                            "is_datalabel": Value("bool"),
-                            "is_unit": Value("bool"),
-                            "is_base": Value("bool"),
-                            "is_axis_label_x_axis": Value("bool"),
-                            "is_axis_label_y_axis": Value("bool"),
-                            "title": Value("string"),
-                            "legend": [Value("string")],
-                            "unit": Value("string"),
-                            "base": Value("string"),
-                            "axis_title": {"x_axis": Value("string"), "y_axis": Value("string")},
-                            "axis_label": {
-                                "x_axis": [Value("string")],
-                                "y_axis": [Value("string")],
-                            },
-                            "data_label": [
-                                [Value("string")],
+                            "no": Value("int32"),
+                            "text": Value("string"),
+                            "NE": [
+                                {
+                                    "id": Value("int32"),
+                                    "entity": Value("string"),
+                                    "type": Value("string"),
+                                    "begin": Value("int32"),
+                                    "end": Value("int32"),
+                                }
                             ],
                         }
                     ],
-                },
-                "summary": [Value("string")],
-            }
-        )
+                }
+            )
+        elif self.config.name == "en":
+            features = Features(
+                {
+                    "id": Value("string"),
+                    "corpus": Value("string"),
+                    "category": Value("string"),
+                    "sentence_ls": [Value("string")],
+                    "metadata": {
+                        "publication_ymd": Value("string"),
+                        "word_segment": Value("int32"),
+                        "popularity": Value("int32"),
+                        "keyword": [Value("string")],
+                    },
+                }
+            )
+        else:
+            raise NotImplementedError()
         return DatasetInfo(
             description=_DESCRIPTION,
             features=features,
@@ -209,56 +203,31 @@ class ChartImageTextpairData(GeneratorBasedBuilder):
             ),
         ]
 
-    def _generate_examples(self, filepath: List[Path], split: str) -> Generator:
-        source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x) and "이미지" in x.stem]
-        source_ls = natsorted(source_ls, key=lambda x: x.filename)
-
-        label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
-        label_ls = natsorted(label_ls, key=lambda x: x.filename)
+    def _generate_examples(self, filepath: List[dict], split: str):
+        split_sentences = Kss("split_sentences")
+        label_zip_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
 
         idx = 0
-        for source_zip, label_zip in zip(source_ls, label_ls):
-            source_zip_file_info_ls = [x for x in source_zip.filelist if not x.is_dir()]
-            source_zip_file_info_ls = natsorted(source_zip_file_info_ls, key=lambda x: x.filename)
+        for label_zip in label_zip_ls:
+            for file_info in label_zip.filelist:
+                if file_info.is_dir():
+                    continue
+                try:
+                    label_ls = json.loads(label_zip.open(file_info).read())["data"]
+                except BaseException as e:
+                    print(f"{e} 에러 발생.")
+                    continue
 
-            label_zip_file_info_ls = [x for x in label_zip.filelist if not x.is_dir()]
-            label_zip_file_info_ls = natsorted(label_zip_file_info_ls, key=lambda x: x.filename)
+                for label in label_ls:
+                    corpus = " ".join([row["text"] for row in label["rows"]])
 
-            if len(source_zip_file_info_ls) != len(label_zip_file_info_ls):
-                raise ValueError("소스와 라벨 데이터의 개수가 틀림!")
-
-            for source_zip_file_info, label_zip_file_info in zip(source_zip_file_info_ls, label_zip_file_info_ls):
-                label_contents = label_zip.open(label_zip_file_info).read()
-                source_contents = source_zip.open(source_zip_file_info).read()
-
-                label = json.loads(label_contents.decode("utf-8"))
-                image = source_contents
-
-                metadata = label["metadata"]
-                metadata["width"] = label["image"][0]["width"]
-                metadata["height"] = label["image"][0]["height"]
-                metadata["annotations"] = label["annotations"]
-
-                # datasets features 특성 상 일관된 dtype을 가져야 하기 때문에 이렇게 해야 함.
-                # 할꺼면 무조건 json.loads를 사용해야 함.
-                conversations = [
-                    {
-                        "role": "user",
-                        "content": json.dumps([{"type": "image"}], ensure_ascii=False),
-                    },
-                    {
-                        "role": "assistant",
-                        "content": json.dumps([{"type": "text", "text": label["description"]}], ensure_ascii=False),
-                    },
-                ]
-
-                data = {
-                    "id": label["image"][0]["id"],
-                    "image": image,
-                    "conversations": conversations,
-                    "metadata": metadata,
-                    "summary": label["summary"],
-                }
-
-                yield (idx, data)
-                idx += 1
+                    data = {
+                        "id": idx,
+                        "corpus": corpus,
+                        "sentence_ls": split_sentences(corpus),
+                        "category": None,
+                        "title": label["title"],
+                        "rows": label["rows"],
+                    }
+                    yield (idx, data)
+                    idx += 1

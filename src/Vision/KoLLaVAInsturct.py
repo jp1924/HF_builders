@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import re
 from pathlib import Path
 from tarfile import TarFile
 from zipfile import ZipExtFile, ZipFile
 
 import requests
 from datasets import (
+    BuilderConfig,
     DatasetInfo,
     Features,
     GeneratorBasedBuilder,
@@ -21,12 +23,16 @@ from tqdm import tqdm
 
 
 URLS = {
-    "label": "https://huggingface.co/datasets/tabtoyou/KoLLaVA-v1.5-Instruct-581k/resolve/main/kollava_v1_5_mix581k.json?download=true",
+    "label": "https://huggingface.co/datasets/tabtoyou/KoLLaVA-v1.5-Instruct-581k/resolve/main/kollava_v1_5_mix581k.json",
     "VisualGenome_1": "https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip",
     "VisualGenome_2": "https://cs.stanford.edu/people/rak248/VG_100K_2/images2.zip",
     "GQA_image": "https://downloads.cs.stanford.edu/nlp/data/gqa/images.zip",
     "coco_image": "http://images.cocodataset.org/zips/train2017.zip",
 }
+
+_DESCRIPTION = """LLaVA-v1.5의 Instruction-following Data에서 필요한 데이터를 필터링하고, 한국어로 번역한 데이터셋입니다. (feat. DeepL)"""
+_VERSION = "1.0.0"
+
 
 DATASET_KEY = "71357"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
@@ -34,18 +40,23 @@ DATASET_SIZE = 11.55
 
 
 class KoLLaVAInsturct(GeneratorBasedBuilder):
-    VERSION = Version("1.1.0")
+    BUILDER_CONFIGS = [
+        BuilderConfig(name="chat", version=_VERSION, description=_DESCRIPTION),
+    ]
+
+    DEFAULT_CONFIG_NAME = "chat"
 
     def _info(self):
+        features = Features(
+            {
+                "id": Value("string"),
+                "image": Image(),
+                "conversations": [{"role": Value("string"), "content": Value("string")}],
+            }
+        )
         return DatasetInfo(
-            features=Features(
-                {
-                    "image": Image(),
-                    "conversations": [{"role": Value("string"), "content": Value("string")}],
-                    "id": Value("string"),
-                }
-            ),
-            supervised_keys=None,
+            features=features,
+            version=Version(_VERSION),
         )
 
     def aihub_downloader(self, destination_path: Path) -> None:
@@ -183,22 +194,52 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, label_ls, image_dict):
-        for idx, x in enumerate(label_ls):
-            if x["image"] not in image_dict:
+        def convert_mm_content(content: str, img_token: str):
+            img_split_regex = re.compile(rf"{img_token}|.")
+
+            new_content_ls = list()
+            sentence = ""
+            for token in img_split_regex.findall(content):
+                if re.match(img_token, token):
+                    if sentence:
+                        new_content_ls.append({"type": "text", "text": sentence})
+                        sentence = ""
+                    new_content_ls.append({"type": "image"})
+                    continue
+
+                sentence += token
+            else:
+                if sentence:
+                    new_content_ls.append({"type": "text", "text": sentence})
+
+            return new_content_ls
+
+        for idx, data in enumerate(label_ls):
+            if data["image"] not in image_dict:
                 continue
 
-            image = image_dict[x["image"]]
-            if isinstance(image, ZipExtFile):
-                image = image.read()
-            else:
-                image = image.read_bytes()
-            x["image"] = image
-
+            img_token_check_ls = list()
             new_conversations_ls = list()
-            for y in x["conversations"]:
-                role = "user" if y["from"] == "human" else "assistant"
-                new_conversations_ls.append({"role": role, "content": y["value"].replace("<image>", "").strip()})
+            for chat in data["conversations"]:
+                mm_content = convert_mm_content(chat["value"], "<image>")
+                new_conversations_ls.append(
+                    {
+                        "role": "user" if chat["from"] == "human" else "assistant",
+                        "content": json.dumps(mm_content, ensure_ascii=False),
+                    }
+                )
+                img_token_check_ls.append({"type": "image"} in mm_content)
+            if not any(img_token_check_ls):
+                # img token이 없는 경우엔 필터링 함.
+                print("데이터에 img_token이 없어서 필터링 함.")
+                print(data["conversations"])
+                continue
 
-            x["conversations"] = new_conversations_ls
+            image = image_dict[data["image"]]
+            data = {
+                "id": data["id"],
+                "image": image.read() if isinstance(image, ZipExtFile) else image.read_bytes(),
+                "conversations": new_conversations_ls,
+            }
 
-            yield (idx, x)
+            yield (idx, data)

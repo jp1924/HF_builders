@@ -6,7 +6,6 @@ from io import BytesIO
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from threading import Semaphore
-from typing import List
 
 from datasets import (
     BuilderConfig,
@@ -22,123 +21,114 @@ from datasets import (
     concatenate_datasets,
 )
 from datasets.config import DEFAULT_MAX_BATCH_SIZE
+from natsort import natsorted
 from PIL import Image as PIL_Image
+from tqdm import tqdm
 
 from transformers.trainer_pt_utils import get_length_grouped_indices
 
 
-URLS = {
-    "WikiTableQuestions": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/WikiTableQuestions.tar",
-    "InfographicsVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/InfographicsVQA.tar",
-    "KleisterCharity": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/KleisterCharity.tar",
-    "benchmark_files": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/benchmark_files.zip",
-    "ureader_json": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/ureader_json.zip",
-    "VisualMRC": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/VisualMRC.tar",
-    "DeepForm": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/DeepForm.tar",
-    "TextCaps": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TextCaps.tar",
-    "TabFact": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TabFact.tar",
-    "ChartQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/ChartQA.tar",
-    "TextVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TextVQA.tar",
-    "DocVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/DocVQA.tar",
+TRAIN_IMG_URLS = {
+    "partial-imgs.00": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.00",
+    "partial-imgs.01": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.01",
+    "partial-imgs.02": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.02",
+    "partial-imgs.03": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.03",
+    "partial-imgs.04": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.04",
+    "partial-imgs.05": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.05",
+    "partial-imgs.06": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.06",
+    "partial-imgs.07": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.07",
 }
-_VERSION = Version("1.1.0")
+TRAIN_LABEL_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/struct_aware_parse.jsonl"
+
+VALID_IMG_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/val_imgs.tar.gz"
+VALID_LABEL_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/val.jsonl"
 
 
-class UReaderInstruction(GeneratorBasedBuilder):
+_HOMEPAGE = "https://huggingface.co/datasets/mPLUG/M-Paper"
+_LICENSE = "Apache License 2.0"
+_CITATION = """@article{hu2023paperowl,
+  title={mplug-paperowl: Scientific diagram analysis with the multimodal large language model},
+  author={Hu, Anwen and Shi, Yaya and Xu, Haiyang and Ye, Jiabo and Ye, Qinghao and Yan, Ming and Li, Chenliang and Qian, Qi and Zhang, Ji and Huang, Fei},
+  journal={arXiv preprint arXiv:2311.18248},
+  year={2023}
+}"""
+_DESCRIPTION = """M-Paper is a Scientific Diagram Analysis dataset based on 48k high-quality arxiv papers (2021~2023) on Machine Learning. M-Paper contains 447k diagram images and supports 3 tasks: Diagram Captioning, Diagram Analysis and Outline Recommendation."""
+_VERSION = Version("1.0.0")
+
+
+class DocStruct4M(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
     DEFAULT_CONFIG_NAME = "default"
     VERSION = _VERSION
 
     def _info(self):
-        features = Features(
+        self.features = Features(
             {
-                "id": Value("string"),
+                "id": Value("int64"),
                 "image": Image(),
                 "conversations": [{"role": Value("string"), "content": Value("string")}],
-                "metadata": {"source": Value("string")},
+                "dataset_name": Value("string"),
+                "task_name": Value("string"),
             }
         )
-        self.thread_num = int(os.getenv("UReaderInstruct_THREAD_NUM", "10"))
-        self.num_proc = int(os.getenv("UReaderInstruct_NUM_PROC", "10"))
-        self.batched = bool(os.getenv("UReaderInstruct_BATCHED", True))
-        self.batch_size = int(os.getenv("UReaderInstruct_BATCH_SIZE", "100"))
-        self.shard_num = int(os.getenv("UReaderInstruct_SHARD_NUM", "4"))
+
+        self.thread_num = int(os.getenv("DocStruct4M_THREAD_NUM", "20"))
+        self.num_proc = int(os.getenv("DocStruct4M_NUM_PROC", "20"))
+        self.batched = int(os.getenv("DocStruct4M_BATCHED", True))
+        self.batch_size = int(os.getenv("DocStruct4M_BATCH_SIZE", "100"))
+        self.shard_num = int(os.getenv("DocStruct4M_SHARD_NUM", "5"))
 
         return DatasetInfo(
-            features=features,
-            supervised_keys=None,
+            description=_DESCRIPTION,
+            features=self.features,
+            homepage=_HOMEPAGE,
+            license=_LICENSE,
+            citation=_CITATION,
+            version=_VERSION,
         )
 
     def _split_generators(self, dl_manager):
-        def matching_path(prefix: str):
-            data_ls = list()
-            for jsonl in label_jsonl_ls:
-                if prefix not in jsonl.stem:
-                    continue
+        cache_dir = Path(dl_manager.download_config.cache_dir)
+        train_partial_img_paths = dl_manager.download(TRAIN_IMG_URLS)
+        train_label_path = dl_manager.download(TRAIN_LABEL_URL)
 
-                # test_TabFact > .split("_")[-1] > TabFact
-                data_name = jsonl.stem.split("_")[-1]
+        valid_img_paths = dl_manager.download_and_extract(VALID_IMG_URL)
+        valid_label_path = dl_manager.download(VALID_LABEL_URL)
 
-                jsonl = jsonl.read_text().split("\n")
-                json_ls = [json.loads(line) for line in jsonl if line]
-                for idx, line in enumerate(json_ls):
-                    img_ls = list()
-                    for img in line["image"]:
-                        start_name = img.replace("DUE_Benchmark/", "").split("/")[0]
-                        data_dir = (
-                            downloaded_files[data_name]
-                            if data_name in downloaded_files
-                            else downloaded_files[start_name]
-                        )
-                        img_ls.append(Path(data_dir, img).as_posix())
-                    line["image"] = img_ls
-                    line["date_from"] = start_name
+        shard_zip_dataset = natsorted(list(train_partial_img_paths.items()), key=lambda x: x[0])
+        download_path = cache_dir.joinpath("DocStruct4M.tar.gz")
+        try:
+            extract_path = dl_manager.extract(download_path)
+        except BaseException as e:  # noqa: F841
+            partial_paths = " ".join([x[1] for x in shard_zip_dataset])
+            os.system(f"cat {partial_paths} > {download_path.as_posix()}")
 
-                    # NOTE: conversations의 img 토큰이 서로 다른 chat으로 분리되어 있어서 이걸 하나로 합침.
-                    #       모든 conversations의 앞에 img token이 있음을 확인함.
-                    conversations = line["conversations"][1:]
-                    conversations[0]["value"] = f"""<image>{conversations[0]['value']}"""
-                    line["conversations"] = conversations
-
-                    json_ls[idx] = line
-
-                data_ls.extend(json_ls)
-            return data_ls
-
-        downloaded_files = dl_manager.download_and_extract(URLS)
-        label_dir = downloaded_files.pop("ureader_json")
-        label_jsonl_ls = list(Path(label_dir).rglob("*.jsonl"))
-
-        train_label = matching_path("train")
-        valid_label = matching_path("val")
-        test_label = matching_path("test")
+            # 이 방법으로 하니깐 OOM 뜨더라.
+            # with open(download_path, "wb") as byte_f:
+            #     for _, part_path_ls in tqdm(shard_zip_dataset, desc="concat"):
+            #         part_bytes = Path(part_path_ls).read_bytes()
+            #         byte_f.write(part_bytes)
+            extract_path = dl_manager.extract(download_path)
 
         return [
             SplitGenerator(
                 name=Split.TRAIN,
                 gen_kwargs={
-                    "filepath": train_label,
-                    "split": "train",
+                    "image_path": Path(extract_path),
+                    "label_path": Path(train_label_path),
                 },
             ),
             SplitGenerator(
                 name=Split.VALIDATION,
                 gen_kwargs={
-                    "filepath": valid_label,
-                    "split": "validation",
-                },
-            ),
-            SplitGenerator(
-                name=Split.TEST,
-                gen_kwargs={
-                    "filepath": test_label,
-                    "split": "test",
+                    "label_path": Path(valid_label_path),
+                    "image_path": Path(valid_img_paths),
                 },
             ),
         ]
 
-    def _generate_examples(self, filepath: List[dict], split: str):
-        def load_image_file(example):
+    def _generate_examples(self, label_path: Path, image_path: Path):
+        def load_image_file(example, img_dir_path):
             def convert_mm_content(content: str, img_token: str):
                 img_split_regex = re.compile(rf"{img_token}|.")
 
@@ -160,18 +150,21 @@ class UReaderInstruction(GeneratorBasedBuilder):
                 return new_content_ls
 
             def downloader(data_row):
-                image_ls, conversations, dataset_name = data_row
+                id_, image_ls, conversations, dataset_name, task_name = data_row
+
+                # if len(image_ls) > 1:
+                #     return None, None, None, None, None, None
 
                 loaded_image_ls = list()
                 loaded_image_size_ls = list()
                 for img_path in image_ls:
                     try:
                         with warnings.catch_warnings(record=True) as warn_ls:
-                            img_path = Path(img_path)
+                            img_path = Path(img_dir_path, img_path)
                             if not img_path.exists():
                                 print(f"{img_path}가 발생함. 해당 샘플은 skip함.")
                                 semaphore.release()
-                                return None, None, None, None
+                                return None, None, None, None, None, None
 
                             img_bytes = img_path.read_bytes()
                             pil_image = PIL_Image.open(BytesIO(img_bytes))
@@ -185,12 +178,12 @@ class UReaderInstruction(GeneratorBasedBuilder):
                                     print(f"{warn.message}가 발생함. 해당 샘플은 skip함.")
                                 pil_image.close()
                                 semaphore.release()
-                                return None, None, None, None
+                                return None, None, None, None, None, None
 
                         if pil_image.format.lower() not in ["jpg", "jpeg", "png", "webp"]:
                             pil_image.close()
                             semaphore.release()
-                            return None, None, None, None
+                            return None, None, None, None, None, None
 
                         pil_image.close()
                         loaded_image_ls.append(img_bytes)
@@ -198,71 +191,90 @@ class UReaderInstruction(GeneratorBasedBuilder):
                     except BaseException as e:  # noqa: F841
                         print(f"{e}가 발생함. 해당 샘플은 skip함.")
                         semaphore.release()
-                        return None, None, None, None
+                        return None, None, None, None, None, None
 
                 img_token_num = 0
                 new_conversation_ls = list()
                 for chat in conversations:
-                    content = convert_mm_content(chat["value"], r"\<image\>")
+                    content = convert_mm_content(chat["content"], r"<\|image\|>")
 
                     img_token_num += len([chat for chat in content if chat["type"] == "image"])
 
                     chat = {
-                        "role": chat["from"],
+                        "role": chat["role"],
                         "content": json.dumps(content, ensure_ascii=False),
                     }
                     new_conversation_ls.append(chat)
 
                 if img_token_num != len(loaded_image_ls):
                     semaphore.release()
-                    return None, None, None, None
+                    return None, None, None, None, None, None
 
                 semaphore.release()
                 return (
+                    id_,
                     loaded_image_ls[0],
                     new_conversation_ls,
                     dataset_name,
+                    task_name,
                     sum(loaded_image_size_ls),
                 )
 
             def data_generator():
-                for ureader_instruct_row in UReaderInstruct_zip:
+                for doc_struct_row in DocStruct4M_zip:
                     semaphore.acquire()
-                    yield ureader_instruct_row
+                    yield doc_struct_row
 
-            image_ls, conversations_ls, dataset_name_ls = (
+            id_ls, image_ls, messages_ls, dataset_name_ls, task_name_ls = (
+                example["id"] if isinstance(example["id"], list) else [example["id"]],
                 example["image"] if isinstance(example["image"], list) else [example["image"]],
-                example["conversations"] if isinstance(example["conversations"], list) else [example["conversations"]],
-                example["date_from"] if isinstance(example["date_from"], list) else [example["date_from"]],
+                (example["messages"] if isinstance(example["messages"], list) else [example["messages"]]),
+                (example["dataset_name"] if isinstance(example["dataset_name"], list) else [example["dataset_name"]]),
+                (example["task_name"] if isinstance(example["task_name"], list) else [example["task_name"]]),
             )
 
+            finish_id_ls = list()
             finish_image_ls = list()
             finish_image_size_ls = list()
             finish_conversations_ls = list()
             finish_dataset_name_ls = list()
+            finish_task_name_ls = list()
 
             semaphore = Semaphore(self.thread_num * 2)
             loader = data_generator()
-            UReaderInstruct_zip = zip(image_ls, conversations_ls, dataset_name_ls)
+            DocStruct4M_zip = zip(id_ls, image_ls, messages_ls, dataset_name_ls, task_name_ls)
             with ThreadPool(self.thread_num) as thread_pool:
                 thead_iter = thread_pool.imap_unordered(downloader, loader)
-                for img_ls, conversations, dataset_name, img_size in thead_iter:
+                for id_, img_ls, conversations, dataset_name, task_name, img_size in thead_iter:
                     if not img_ls:
                         continue
 
+                    finish_id_ls.append(id_)
                     finish_image_ls.append(img_ls)
                     finish_conversations_ls.append(conversations)
                     finish_dataset_name_ls.append(dataset_name)
+                    finish_task_name_ls.append(task_name)
                     finish_image_size_ls.append(img_size)
 
             return {
+                "id": finish_id_ls,
                 "image": finish_image_ls,
                 "conversations": finish_conversations_ls,
                 "dataset_name": finish_dataset_name_ls,
+                "task_name": finish_task_name_ls,
                 "image_size": finish_image_size_ls,
             }
 
-        datasets = Dataset.from_list(filepath)
+        # 컬럼이 일정하지 않아서 load_dataset으로 불러오지 못함. 데이터에서 rvl_cdip_class를 검색해 보셈.
+        labels = list()
+        with open(str(label_path), "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            for idx, line in enumerate(tqdm(lines, desc="load_labels")):
+                line = json.loads(line.strip())
+                line["id"] = idx
+                labels.append(line)
+
+        datasets = Dataset.from_list(labels)
 
         finish_shard_ls = list()
         for shard_idx in range(self.shard_num):
@@ -274,7 +286,8 @@ class UReaderInstruction(GeneratorBasedBuilder):
                 batch_size=self.batch_size,
                 load_from_cache_file=True,
                 remove_columns=datasets.column_names,
-                desc=f"UReaderInstruct-{shard_idx}/{self.shard_num}",
+                fn_kwargs={"img_dir_path": image_path},
+                desc=f"DocStruct4M-{shard_idx}/{self.shard_num}",
             )
             finish_shard_ls.append(shard_datasets)
 
@@ -289,6 +302,5 @@ class UReaderInstruction(GeneratorBasedBuilder):
         for idx in image_size_ls:
             data = datasets[idx]
             del data["image_size"]
-            data["id"] = idx_
             yield (idx_, data)
             idx_ += 1
