@@ -56,8 +56,18 @@ DATASET_SIZE = 1464.32
 
 class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="object", version=_VERSION, description="객체 데이터"),
-        BuilderConfig(name="caption", version=_VERSION, description="캡션 데이터"),
+        BuilderConfig(
+            name="object",
+            version=_VERSION,
+            data_dir="object",
+            description="객체 데이터",
+        ),
+        BuilderConfig(
+            name="caption",
+            version=_VERSION,
+            data_dir="caption",
+            description="캡션 데이터",
+        ),
     ]
 
     DEFAULT_CONFIG_NAME = "caption"
@@ -234,7 +244,7 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
 
         label_zip_ls = [ZipFile(path) for path in filepath if "라벨링데이터" in path.as_posix()]
         label_zip_ls = [label_zip for label_zip in label_zip_ls if "(영상)" not in label_zip.filename]
-        label_zip_ls = [label_zip for label_zip in label_zip_ls if "TL_라벨링_데이터_" in label_zip.filename]
+        label_zip_ls = [label_zip for label_zip in label_zip_ls if "_라벨링_데이터_" in label_zip.filename]
         label_zip_ls = natsorted(label_zip_ls, key=lambda path: path.filename)
 
         # # /IMG_1580162_air_conditioner(air_conditioner(ceiling)).jpg 이레 생겨서 슬라이싱 함.
@@ -274,7 +284,7 @@ class KoreanVisionDataforImageDescriptionSentenceExtractionandGeneration(Generat
                 img_io = io.BytesIO(source_zip.open(zip_file_info).read())
                 image = PIL_Image.open(img_io)
                 image = image.convert("RGB")
-            except BaseException as e:
+            except BaseException:
                 continue
 
             caption_ko_ls = [x["korean"] for x in label["annotations"]]
