@@ -110,7 +110,7 @@ class KoLLaVAReCap118K(GeneratorBasedBuilder):
         )
 
         self.shard_num = int(os.getenv("SHARD_NUM", "10"))
-        self.gpt_version = int(os.getenv("GPT_VERSION", GPT_VERSION))
+        self.gpt_version = os.getenv("GPT_VERSION", GPT_VERSION)
         self.map_batch_size = int(os.getenv("MAP_BATCH_SIZE", "200"))
         self.map_num_proc = int(os.getenv("MAP_NUM_PROC", "4"))
 
