@@ -214,7 +214,7 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
         for idx, example in enumerate(labels["data_info"]):
             conversations = [
                 {"role": "user", "content": example["question"]},
-                {"role": "system", "content": example["answer"]["contents"]},
+                {"role": "assistant", "content": example["answer"]["contents"]},
             ]
             data = {
                 "id": example["data_id"],
@@ -250,11 +250,11 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
 
             chosen_conversations = [
                 {"role": "user", "content": example["question"]},
-                {"role": "system", "content": preperence_ls[0]["content"]},
+                {"role": "assistant", "content": preperence_ls[0]["content"]},
             ]
             reject_conversations = [
                 {"role": "user", "content": example["question"]},
-                {"role": "system", "content": preperence_ls[-1]["content"]},
+                {"role": "assistant", "content": preperence_ls[-1]["content"]},
             ]
 
             data = {
