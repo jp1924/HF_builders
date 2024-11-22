@@ -49,14 +49,14 @@ PRETRAINING_DATA = {
 }
 
 INSTRUCTION_DATA = {
-    # "image_data": [
-    #     "https://huggingface.co/datasets/SpursgoZmy/MMTab/resolve/main/MMTab-instruct_table_images_82K.zip",
-    #     "http://images.cocodataset.org/zips/train2017.zip",
-    #     "https://downloads.cs.stanford.edu/nlp/data/gqa/images.zip",
-    #     "https://dl.fbaipublicfiles.com/textvqa/images/train_val_images.zip",
-    #     "https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip",
-    #     "https://cs.stanford.edu/people/rak248/VG_100K_2/images2.zip",
-    # ],
+    "image_data": [
+        "https://huggingface.co/datasets/SpursgoZmy/MMTab/resolve/main/MMTab-instruct_table_images_82K.zip",
+        "http://images.cocodataset.org/zips/train2017.zip",
+        "https://downloads.cs.stanford.edu/nlp/data/gqa/images.zip",
+        "https://dl.fbaipublicfiles.com/textvqa/images/train_val_images.zip",
+        "https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip",
+        "https://cs.stanford.edu/people/rak248/VG_100K_2/images2.zip",
+    ],
     "label_data": "https://huggingface.co/datasets/SpursgoZmy/MMTab/resolve/main/enhanced_llava_sft_data_898K.json",
     "ocr_vqa": "https://drive.usercontent.google.com/download?id=1r0tyZUwGCc4wIG4RkiglCGNL_nFJjR6Q&export=download&authuser=0&confirm=t&uuid=cef68622-709d-4b1f-9b08-50b4de171e1b&at=AENtkXaP8DWSgw2R8DvZ-CWzSvV1%3A1731983081803",
 }
