@@ -71,11 +71,10 @@ class KoAlpaca(GeneratorBasedBuilder):
                 {"role": "user", "content": data["instruction"]},
                 {"role": "assistant", "content": data["output"]},
             ]
-            _id = data["url"].replace("https://kin.naver.com/qna/detail.naver?", "")
-            return (
+            yield (
                 idx,
                 {
-                    "id": _id,
+                    "id": data["url"].replace("https://kin.naver.com/qna/detail.naver?", ""),
                     "conversations": conversations,
                     "prompt": data["instruction"],
                     "answer": data["output"],
