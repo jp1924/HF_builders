@@ -57,7 +57,7 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
                     "metadata": {
                         "main": Value("string"),
                         "middle": Value("string"),
-                        "question_type": Value("string"),
+                        "prompt_type": Value("string"),
                     },
                 }
             )
@@ -68,14 +68,14 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
                     "id": Value("string"),
                     "chosen_conversations": [{"role": Value("string"), "content": Value("string")}],
                     "reject_conversations": [{"role": Value("string"), "content": Value("string")}],
-                    "question": Value("string"),
+                    "prompt": Value("string"),
                     "chosen": Value("string"),
                     "reject": Value("string"),
                     "preperence_ranking": [{"content": Value("string"), "ranking": Value("float")}],
                     "metadata": {
                         "main": Value("string"),
                         "middle": Value("string"),
-                        "question_type": Value("string"),
+                        "prompt_type": Value("string"),
                     },
                 }
             )
@@ -83,11 +83,11 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
             features = Features(
                 {
                     "id": Value("string"),
-                    "question": Value("string"),
+                    "prompt": Value("string"),
                     "metadata": {
                         "main": Value("string"),
                         "middle": Value("string"),
-                        "question_type": Value("string"),
+                        "prompt_type": Value("string"),
                     },
                 }
             )
@@ -261,7 +261,7 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
                 "id": example["data_id"],
                 "chosen_conversations": chosen_conversations,
                 "reject_conversations": reject_conversations,
-                "question": example["question"],
+                "prompt": example["question"],
                 "chosen": preperence_ls[0]["content"],
                 "reject": preperence_ls[-1]["content"],
                 "preperence_ranking": preperence_ls,
@@ -283,7 +283,7 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
         for idx, example in enumerate(labels["data_info"]):
             data = {
                 "id": example["data_id"],
-                "question": example["question"],
+                "prompt": example["question"],
                 "metadata": {
                     "main": example["data_category"]["main"],
                     "middle": example["data_category"]["middle"],
