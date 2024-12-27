@@ -54,6 +54,8 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
                 {
                     "id": Value("string"),
                     "conversations": [{"role": Value("string"), "content": Value("string")}],
+                    "prompt": Value("string"),
+                    "answer": Value("string"),
                     "metadata": {
                         "main": Value("string"),
                         "middle": Value("string"),
@@ -199,13 +201,13 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
 
     def _generate_examples(self, file_path: List[Path], split) -> Generator:
         if self.config.name == "SFT":
-            return self.sft(file_path, split)
+            return self._generate_examples_sft(file_path, split)
         elif self.config.name == "RL":
-            return self.rl(file_path, split)
+            return self._generate_examples_rl(file_path, split)
         elif self.config.name == "PPO":
-            return self.ppo(file_path, split)
+            return self._generate_examples_ppo(file_path, split)
 
-    def sft(self, file_path: List[Path], split: str) -> Generator:
+    def _generate_examples_sft(self, file_path: List[Path], split: str) -> Generator:
         labeling_zip = [ZipFile(path) for path in file_path if "02.라벨링데이터" in path.as_posix()][0]
         sft_info = [zip_info for zip_info in labeling_zip.filelist if "/SFTlabel.json" == zip_info.filename][0]
 
@@ -219,15 +221,17 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
             data = {
                 "id": example["data_id"],
                 "conversations": conversations,
+                "prompt": example["question"],
+                "answer": example["answer"]["contents"],
                 "metadata": {
                     "main": example["data_category"]["main"],
                     "middle": example["data_category"]["middle"],
-                    "question_type": example["question_type"],
+                    "prompt_type": example["question_type"],
                 },
             }
             yield (idx, data)
 
-    def rl(self, file_path: List[Path], split: str) -> Generator:
+    def _generate_examples_rl(self, file_path: List[Path], split: str) -> Generator:
         labeling_zip = [ZipFile(path) for path in file_path if "02.라벨링데이터" in path.as_posix()][0]
         rl_info = [zip_info for zip_info in labeling_zip.filelist if "/RMlabel.json" == zip_info.filename][0]
 
@@ -268,12 +272,12 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
                 "metadata": {
                     "main": example["data_category"]["main"],
                     "middle": example["data_category"]["middle"],
-                    "question_type": example["question_type"],
+                    "prompt_type": example["question_type"],
                 },
             }
             yield (idx, data)
 
-    def ppo(self, file_path: List[Path], split: str) -> Generator:
+    def _generate_examples_ppo(self, file_path: List[Path], split: str) -> Generator:
         labeling_zip = [
             ZipFile(path) for path in file_path if "01.원천데이터" in path.as_posix() and "RLHF" in path.as_posix()
         ][0]
@@ -287,7 +291,7 @@ class DevelopmentandDataofLLMswithEnhancedKoreanLanguagePerformance(GeneratorBas
                 "metadata": {
                     "main": example["data_category"]["main"],
                     "middle": example["data_category"]["middle"],
-                    "question_type": example["question_type"],
+                    "prompt_type": example["question_type"],
                 },
             }
             yield (idx, data)
