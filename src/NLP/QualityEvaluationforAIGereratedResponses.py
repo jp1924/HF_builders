@@ -9,7 +9,7 @@ from typing import Generator, List, Optional, Union
 from zipfile import ZipFile
 
 import requests
-from datasets import BuilderConfig, DatasetInfo, Features, GeneratorBasedBuilder, Split, SplitGenerator, Value
+from datasets import BuilderConfig, DatasetInfo, Features, GeneratorBasedBuilder, Split, SplitGenerator, Value, Version
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -112,25 +112,25 @@ class QualityEvaluationforAIGereratedResponses(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
         BuilderConfig(
             name="SFT",
-            version="1.2.0",
+            version=Version("1.2.0"),
             data_dir="SFT",
             description=f"- 용도: LLM SFT용 데이터. 심심이 대화 로그를 활용해 만들었다 보니, 노이즈가 너무 심하게 걸린 데이터가 있다. 그런 데이터 필터링해서 SFT 데이터를 구성함.\n{DESCRIPTION}",
         ),
         BuilderConfig(
             name="ORIGINAL_SFT",
-            version="1.2.0",
+            version=Version("1.2.0"),
             data_dir="ORIGINAL_SFT",
             description=f"- 용도: LLM SFT용 데이터\n{DESCRIPTION}",
         ),
         BuilderConfig(
             name="CHAT_CLS",
-            version="1.2.0",
+            version=Version("1.2.0"),
             data_dir="CHAT_CLS",
             description=f"- 용도: LLM 대화 평가용. 각 질문, 답변, 과거 대화를 바탕으로 품질을 평가하기 위해 만들어진 데이터\n{DESCRIPTION}",
         ),
         BuilderConfig(
             name="DOC_CLS",
-            version="1.2.0",
+            version=Version("1.2.0"),
             data_dir="CHAT_CLS",
             description=f"- 용도: LLM 대화 평가용. 전체 대화의 퀄리티를 분류하기 위해 만들어진 데이터\n{DESCRIPTION}",
         ),
@@ -272,18 +272,12 @@ class QualityEvaluationforAIGereratedResponses(GeneratorBasedBuilder):
         data_file.close()
 
     def concat_zip_part(self, unzip_dir: Path) -> None:
-        part_glob = Path(unzip_dir).rglob("*.zip.part*")
-
-        part_dict = dict()
-        for part_path in part_glob:
+        part_dict = defaultdict(list)
+        for part_path in unzip_dir.rglob("*.zip.part*"):
             parh_stem = str(part_path.parent.joinpath(part_path.stem))
-
-            if parh_stem not in part_dict:
-                part_dict[parh_stem] = list()
-
             part_dict[parh_stem].append(part_path)
 
-        for dst_path, part_path_ls in part_dict.datas():
+        for dst_path, part_path_ls in part_dict.items():
             with open(dst_path, "wb") as byte_f:
                 for part_path in natsorted(part_path_ls):
                     byte_f.write(part_path.read_bytes())
