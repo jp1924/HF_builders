@@ -201,8 +201,6 @@ class CorpusForLLMNationalRecordsAndArchives(GeneratorBasedBuilder):
                         "task": Value("string"),
                         "output": Value("string"),
                     },
-                    {"role": Value("string"), "content": Value("string")},
-                    {"role": Value("string"), "content": Value("string")},
                 ],
                 "prompt": Value("string"),
                 "answer": Value("string"),
