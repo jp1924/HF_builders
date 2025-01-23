@@ -73,6 +73,7 @@ _HOMEPAGE = (
 _DATANAME = "EmotionalDialogueCorpus"
 DATASET_SIZE = 0.02035
 
+# copied from: https://github.com/parkjg20/LLM-Depressed/tree/main/HuggingFaceTrain
 SITUATION_DICT = {
     "S01": "가족관계",
     "S02": "학업 및 진로",
@@ -157,6 +158,9 @@ EMOTION_DICT = {
     "E69": "자신하는",
 }
 
+AGE_DICT = {"A01": "청소년", "A02": "청년", "A03": "중년", "A04": "노년"}
+GENDER_DICT = {"G01": "남성", "G02": "여성"}
+
 
 class EmotionalDialogueCorpus(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
@@ -183,8 +187,9 @@ class EmotionalDialogueCorpus(GeneratorBasedBuilder):
             "disease": Value("string"),
             "emotion": Value("string"),
             "metadata": {
-                "persona": [Value("string")],
-                "computer": [Value("string")],
+                "age": Value("string"),
+                "gender": Value("string"),
+                "computer": Value("string"),
             },
         }
 
@@ -344,7 +349,8 @@ class EmotionalDialogueCorpus(GeneratorBasedBuilder):
                 "disease": DISEASE_DICT[disease],
                 "emotion": EMOTION_DICT[emotion],
                 "metadata": {
-                    "persona": persona["human"],
-                    "computer": persona["computer"],
+                    "age": AGE_DICT[persona["human"][0]],
+                    "gender": GENDER_DICT[persona["human"][1]],
+                    "computer": persona["computer"][0],  # EDA 해봤는데 전부 C01 밖에 없다.
                 },
             }
