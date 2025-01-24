@@ -193,7 +193,7 @@ class CorpusForLLMNationalRecordsAndArchives(GeneratorBasedBuilder):
         elif self.config.name == "SFT":
             features = {
                 "id": Value("string"),
-                "conversation": [
+                "conversations": [
                     {
                         "role": Value("string"),
                         "content": Value("string"),
@@ -378,12 +378,13 @@ class CorpusForLLMNationalRecordsAndArchives(GeneratorBasedBuilder):
                         "task": task["text"],
                         "output": output["text"],
                     },
+                    {"role": "passage", "content": raw_data["context"]},
                     {"role": "user", "content": prompt},
                     {"role": "assistant", "content": answer},
                 ]
                 yield {
                     "id": raw_data["context_id"],
-                    "conversation": conversation,
+                    "conversations": conversation,
                     "prompt": prompt,
                     "answer": answer,
                     "passage": raw_data["context"],
