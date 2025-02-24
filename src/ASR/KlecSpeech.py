@@ -194,16 +194,20 @@ class KlecSpeech(GeneratorBasedBuilder):
             license=_LICENSE,
         )
 
-    def aihub_downloader(self, download_path: Path) -> List[Path]:
+    def _aihub_downloader(self, download_path: Path) -> List[Path]:
         def download_from_aihub(download_path: Path, apikey: str) -> None:
+            # 이유는 모르겠는데 try를 두번 겹쳐야지 정상 동작하더라.
             try:
-                with TarFile.open(download_path, "r") as tar:
-                    tar.getmembers()
-                    return None
-            except Exception as e:
-                msg = f"tar 파일이 손상되었다. {e} 손상된 파일은 삭제하고 다시 다운로드 받는다."
-                logger.warning(msg)
-                download_path.unlink()
+                try:
+                    with TarFile.open(download_path, "r") as tar:
+                        tar.getmembers()
+                        return None
+                except Exception as e:
+                    msg = f"tar 파일이 손상되었다. {e} 손상된 파일은 삭제하고 다시 다운로드 받는다."
+                    logger.warning(msg)
+                    download_path.unlink()
+            except BaseException:
+                pass
 
             headers, params = {"apikey": apikey}, {"fileSn": "all"}
             response = requests.get(
@@ -220,6 +224,7 @@ class KlecSpeech(GeneratorBasedBuilder):
             if response.status_code != 200:
                 raise BaseException(f"Download failed with HTTP status code: {response.status_code}")
 
+            logger.info("다운로드 시작!")
             downloaded_bytes = 0
             data_file = open(download_path.as_posix(), "wb")
             with tqdm(total=round(DATASET_SIZE * 1024**2)) as pbar:
@@ -262,6 +267,7 @@ class KlecSpeech(GeneratorBasedBuilder):
             os.remove(tar_file)
 
         data_dir = download_path.parent.joinpath(download_path.stem)
+
         complete_file_path = data_dir.joinpath("download_complete")
 
         if complete_file_path.exists():
@@ -285,7 +291,7 @@ class KlecSpeech(GeneratorBasedBuilder):
     def _split_generators(self, dl_manager) -> List[SplitGenerator]:  # type: ignore
         cache_dir = Path(dl_manager.download_config.cache_dir)
         download_path = cache_dir.joinpath(f"{_DATANAME}.tar")
-        src_path_ls = self.aihub_downloader(download_path)
+        src_path_ls = self._aihub_downloader(download_path)
 
         if self.config.name == "ASR":
             train_src_ls = [path for path in src_path_ls if "1.Training" in path.as_posix()]
