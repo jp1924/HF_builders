@@ -250,7 +250,7 @@ class KlecSpeech(GeneratorBasedBuilder):
             ┣ dataset_1.zip.part2147483648
             AI-HUB에서 다운받는 데이터는 part로 나뉘어져 있어서 병합할 필요가 있다."""
             part_dict = dict()
-            for part_path in Path(data_dir).rglob("*.zip.part*"):
+            for part_path in Path(data_dir).rglob("*.part*"):
                 parh_stem = str(part_path.parent.joinpath(part_path.stem))
                 part_dict.setdefault(parh_stem, list()).append(part_path)
 
@@ -290,6 +290,7 @@ class KlecSpeech(GeneratorBasedBuilder):
 
     def _split_generators(self, dl_manager) -> List[SplitGenerator]:  # type: ignore
         cache_dir = Path(dl_manager.download_config.cache_dir)
+
         download_path = cache_dir.joinpath(f"{_DATANAME}.tar")
         src_path_ls = self._aihub_downloader(download_path)
 
