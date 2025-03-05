@@ -97,7 +97,7 @@ class KoreanUniversityLectureData(GeneratorBasedBuilder):
             features = Features(
                 {
                     "id": Value("string"),
-                    "audio": Audio(sampling_rate=SAMPLE_RATE),
+                    "audio": Audio(SAMPLE_RATE),
                     "sentence": Value("string"),
                     "metadata": {
                         "identifier": Value("string"),

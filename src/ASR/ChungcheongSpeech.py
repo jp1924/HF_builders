@@ -43,19 +43,20 @@ _DESCRIPTION = """방언(충청도)을 사용하는 일상 대화를 인식, 음
 # https://github.com/huggingface/datasets/blob/dcd01046388fc052d37acc5a450bea69e3c57afc/templates/new_dataset_script.py#L65 참고해서 만듬.
 class ChungcheongSpeech(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="STT", version="1.2.0", description="STT 학습에 맞춰서 최적화된 데이터" + _DESCRIPTION),
+        BuilderConfig(name="ASR", version="1.2.0", description="STT 학습에 맞춰서 최적화된 데이터" + _DESCRIPTION),
         # VAD에 사용할 수 있지 않을까 해서 이렇게 남겨 둠.
         BuilderConfig(name="Original", version="1.2.0", description="순수 raw 데이터" + _DESCRIPTION),
     ]
 
-    DEFAULT_CONFIG_NAME = "STT"
+    DEFAULT_CONFIG_NAME = "ASR"
+    DEFAULT_WRITER_BATCH_SIZE = 1000
 
     def _info(self) -> DatasetInfo:
         if self.config.name == "STT":
             features = Features(
                 {
                     "id": Value("string"),
-                    "audio": Audio(16000),
+                    "audio": Audio(SAMPLE_RATE),
                     "sentence": Value("string"),
                     "standard_form": Value("string"),
                     "dialect_form": Value("string"),
@@ -99,7 +100,7 @@ class ChungcheongSpeech(GeneratorBasedBuilder):
         elif self.config.name == "Original":
             features = Features(
                 {
-                    "audio": Audio(16000),
+                    "audio": Audio(SAMPLE_RATE),
                     "id": Value("string"),
                     "metadata": {
                         "title": Value("string"),

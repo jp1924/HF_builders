@@ -44,10 +44,11 @@ _DESCRIPTION = """특정 도메인에 국한되지 않고 다양성을 확보하
 # https://github.com/huggingface/datasets/blob/dcd01046388fc052d37acc5a450bea69e3c57afc/templates/new_dataset_script.py#L65 참고해서 만듬.
 class BroadcastSpeech(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="STT", version="1.0.0", description="STT 학습에 맞춰서 최적화된 데이터" + _DESCRIPTION),
+        BuilderConfig(name="ASR", version="1.0.0", description="STT 학습에 맞춰서 최적화된 데이터" + _DESCRIPTION),
     ]
 
-    DEFAULT_CONFIG_NAME = "STT"
+    DEFAULT_CONFIG_NAME = "ASR"
+    DEFAULT_WRITER_BATCH_SIZE = 1000
 
     def _info(self) -> DatasetInfo:
         features = Features(

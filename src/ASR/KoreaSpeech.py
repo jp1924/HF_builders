@@ -211,7 +211,7 @@ class KoreaSpeech(GeneratorBasedBuilder):
     def _info(self) -> DatasetInfo:
         features = Features(
             {
-                "audio": Audio(16000),
+                "audio": Audio(SAMPLE_RATE),
                 "sentence": Value("string"),
                 "id": Value("string"),
                 "meta": {

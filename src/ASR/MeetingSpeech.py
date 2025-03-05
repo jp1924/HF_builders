@@ -58,7 +58,7 @@ class MeetingSpeech(GeneratorBasedBuilder):
     def _info(self) -> DatasetInfo:
         features = Features(
             {
-                "audio": Audio(16000),
+                "audio": Audio(SAMPLE_RATE),
                 "id": Value("string"),
                 "sentence": Value("string"),
                 "original_form": Value("string"),

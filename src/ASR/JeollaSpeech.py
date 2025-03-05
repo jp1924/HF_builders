@@ -48,14 +48,15 @@ class JeollaSpeech(GeneratorBasedBuilder):
         BuilderConfig(name="Original", version="1.2.0", description="순수 raw 데이터" + _DESCRIPTION),
     ]
 
-    DEFAULT_CONFIG_NAME = "STT"
+    DEFAULT_CONFIG_NAME = "ASR"
+    DEFAULT_WRITER_BATCH_SIZE = 1000
 
     def _info(self) -> DatasetInfo:
-        if self.config.name == "STT":
+        if self.config.name == "ASR":
             features = Features(
                 {
                     "id": Value("string"),
-                    "audio": Audio(16000),
+                    "audio": Audio(SAMPLE_RATE),
                     "sentence": Value("string"),
                     "standard_form": Value("string"),
                     "dialect_form": Value("string"),
@@ -99,7 +100,7 @@ class JeollaSpeech(GeneratorBasedBuilder):
         elif self.config.name == "Original":
             features = Features(
                 {
-                    "audio": Audio(16000),
+                    "audio": Audio(SAMPLE_RATE),
                     "id": Value("string"),
                     "metadata": {
                         "title": Value("string"),

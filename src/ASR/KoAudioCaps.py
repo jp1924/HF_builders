@@ -145,6 +145,7 @@ class KoAudioCaps(GeneratorBasedBuilder):
         ),
     ]
     DEFAULT_CONFIG_NAME = "default"
+    DEFAULT_WRITER_BATCH_SIZE = 1000
 
     def _info(self):
         if self.config.name == "default":
