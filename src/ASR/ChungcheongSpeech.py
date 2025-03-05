@@ -52,7 +52,7 @@ class ChungcheongSpeech(GeneratorBasedBuilder):
     DEFAULT_WRITER_BATCH_SIZE = 1000
 
     def _info(self) -> DatasetInfo:
-        if self.config.name == "STT":
+        if self.config.name == "ASR":
             features = Features(
                 {
                     "id": Value("string"),
