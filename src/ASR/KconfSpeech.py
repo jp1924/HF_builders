@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import json
 import os
 from copy import deepcopy
@@ -20,13 +19,14 @@ _LICENSE = """AI 데이터 허브에서 제공되는 인공지능 학습용 데�
 
 
 DATASET_KEY = "132"
-DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
-_HOMEPAGE = (
-    f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
-)
-SAMPLE_RATE = 16000
-DATASET_SIZE = 248.33
+DOWNLOAD_URL = f"https://api.aihub.or.kr/down/0.5/{DATASET_KEY}.do"
+_HOMEPAGE = f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"  # nolint
+
+
 _DATANAME = "KconfSpeech"
+DATASET_SIZE = 248.33  # GB
+SAMPLE_RATE = 16000
+
 
 DESCRIPTION = """└─010.회의 음성 데이터
         └─01.데이터

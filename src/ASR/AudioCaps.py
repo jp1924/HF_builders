@@ -31,6 +31,7 @@ import datasets
 import pandas as pd
 from tqdm import tqdm
 
+
 try:
     import yt_dlp
 except ImportError:
@@ -46,9 +47,7 @@ _CITATION = """\
 }
 """
 
-_DESCRIPTION = """\
-We explore audio captioning: generating natural language description for any kind of audio in the wild. We contribute AudioCaps, a large-scale dataset of about 46K audio clips to human-written text pairs collected via crowdsourcing on the  AudioSet dataset. The collected captions of AudioCaps are indeed faithful for audio inputs. We provide the source code of the models to explore what forms of audio representation and captioning models are effective for the audio captioning.
-"""
+_DESCRIPTION = """We explore audio captioning: generating natural language description for any kind of audio in the wild. We contribute AudioCaps, a large-scale dataset of about 46K audio clips to human-written text pairs collected via crowdsourcing on the  AudioSet dataset. The collected captions of AudioCaps are indeed faithful for audio inputs. We provide the source code of the models to explore what forms of audio representation and captioning models are effective for the audio captioning."""
 
 _HOMEPAGE = "https://github.com/cdjkim/audiocaps"
 
@@ -84,7 +83,6 @@ class AudioCaps(datasets.GeneratorBasedBuilder):
                     "caption": datasets.Value("string"),
                 }
             ),
-            supervised_keys=None,
             homepage=_HOMEPAGE,
             license=_LICENSE,
             citation=_CITATION,
@@ -196,13 +194,16 @@ class AudioCaps(datasets.GeneratorBasedBuilder):
             if rm_flag:
                 # rm file
                 os.remove(wav_file)
-            yield id_, {
-                "audiocap_id": row["audiocap_id"],
-                "youtube_id": row["youtube_id"],
-                "start_time": row["start_time"],
-                "audio": audio,
-                "caption": row["caption"],
-            }
+            yield (
+                id_,
+                {
+                    "audiocap_id": row["audiocap_id"],
+                    "youtube_id": row["youtube_id"],
+                    "start_time": row["start_time"],
+                    "audio": audio,
+                    "caption": row["caption"],
+                },
+            )
         if rm_flag:
             # rm dir
             os.remove(save_dir)

@@ -13,6 +13,7 @@ import requests
 import soundfile as sf
 from datasets import (
     Audio,
+    BuilderConfig,
     DatasetInfo,
     Features,
     GeneratorBasedBuilder,
@@ -23,14 +24,13 @@ from datasets import (
 from natsort import natsorted
 from tqdm import tqdm
 
-_LICENSE = """
-AI 데이터 허브에서 제공되는 인공지능 학습용 데이터(이하 ‘AI데이터’라고 함)는 과학기술정보통신부와 한국지능정보사회진흥원의 「지능정보산업 인프라 조성」 사업의 일환으로 구축되었으며, 본 사업의 유‧무형적 결과물인 데이터, AI응용모델 및 데이터 저작도구의 소스, 각종 매뉴얼 등(이하 ‘AI데이터 등’)에 대한 일체의 권리는 AI데이터 등의 구축 수행기관 및 참여기관(이하 ‘수행기관 등’)과 한국지능정보사회진흥원에 있습니다.
 
-본 AI 데이터는 인공지능 학습모델의 학습용으로만 사용할 수 있습니다. 다만 기존의 데이터셋을 활용하시어 만들어진 2차 저작물(훈련으로 만들어진 지능형 제품・서비스, 챗봇 등) 은 영리적・비영리적 활용이 가능합니다.
-"""
+_LICENSE = """AI 데이터 허브에서 제공되는 인공지능 학습용 데이터(이하 ‘AI데이터’라고 함)는 과학기술정보통신부와 한국지능정보사회진흥원의 「지능정보산업 인프라 조성」 사업의 일환으로 구축되었으며, 본 사업의 유‧무형적 결과물인 데이터, AI응용모델 및 데이터 저작도구의 소스, 각종 매뉴얼 등(이하 ‘AI데이터 등’)에 대한 일체의 권리는 AI데이터 등의 구축 수행기관 및 참여기관(이하 ‘수행기관 등’)과 한국지능정보사회진흥원에 있습니다.
 
-_CITATION = """\
-@article{bang2020ksponspeech,
+본 AI 데이터는 인공지능 학습모델의 학습용으로만 사용할 수 있습니다. 다만 기존의 데이터셋을 활용하시어 만들어진 2차 저작물(훈련으로 만들어진 지능형 제품・서비스, 챗봇 등) 은 영리적・비영리적 활용이 가능합니다."""
+
+
+_CITATION = """@article{bang2020ksponspeech,
   title={KsponSpeech: Korean spontaneous speech corpus for automatic speech recognition},
   author={Bang, Jeong-Uk and Yun, Seung and Kim, Seung-Hi and Choi, Mu-Yeol and Lee, Min-Kyu and Kim, Yeo-Jeong and Kim, Dong-Hyun and Park, Jun and Lee, Young-Jik and Kim, Sang-Hun},
   journal={Applied Sciences},
@@ -39,43 +39,52 @@ _CITATION = """\
   pages={6936},
   year={2020},
   publisher={Multidisciplinary Digital Publishing Institute}
-}
-"""
-
-_DESCRIPTION = """
-KsponSpeech is a large-scale spontaneous speech corpus of Korean conversations. This corpus contains 969 hrs of general open-domain dialog utterances, spoken by about 2,000 native Korean speakers in a clean environment. All data were constructed by recording the dialogue of two people freely conversing on a variety of topics and manually transcribing the utterances. The transcription provides a dual transcription consisting of orthography and pronunciation, and disfluency tags for spontaneity of speech, such as filler words, repeated words, and word fragments. KsponSpeech is publicly available on an open data hub site of the Korea government. (https://aihub.or.kr/aidata/105)
-"""
+}"""
 
 
 DATASET_KEY = "123"
-DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
-_HOMEPAGE = (
-    f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
-)
+DOWNLOAD_URL = f"https://api.aihub.or.kr/down/0.5/{DATASET_KEY}.do"
+_HOMEPAGE = f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"  #  no lint
+
+
+_DATANAME = "KsponSpeech"
+DATASET_SIZE = 72.04  # GB
+SAMPLE_RATE = 16000
+
+
+_DESCRIPTION = """KsponSpeech is a large-scale spontaneous speech corpus of Korean conversations. This corpus contains 969 hrs of general open-domain dialog utterances, spoken by about 2,000 native Korean speakers in a clean environment. All data were constructed by recording the dialogue of two people freely conversing on a variety of topics and manually transcribing the utterances. The transcription provides a dual transcription consisting of orthography and pronunciation, and disfluency tags for spontaneity of speech, such as filler words, repeated words, and word fragments. KsponSpeech is publicly available on an open data hub site of the Korea government. (https://aihub.or.kr/aidata/105)"""
+
 
 search_audio_zip = re.compile("KsponSpeech_(0[1-5]|eval).zip")
 
-_VERSION = "1.0.0"
-_DATANAME = "KsponSpeech"
-
 
 class KsponSpeech(GeneratorBasedBuilder):
+    BUILDER_CONFIGS = [
+        BuilderConfig(
+            name="ASR",
+            data_dir="ASR",
+            version="1.0.0",
+            description=_DESCRIPTION,
+        )
+    ]
+    DEFAULT_CONFIG_NAME = "ASR"
+    DEFAULT_WRITER_BATCH_SIZE = 1000
+
     def _info(self) -> DatasetInfo:
         features = Features(
             {
-                "audio": Audio(16000),
+                "audio": Audio(SAMPLE_RATE),
                 "sentence": Value("string"),
                 "id": Value("string"),
             }
         )
         return DatasetInfo(
-            description=_DESCRIPTION,
+            description=self.config.description,
+            version=self.config.version,
             features=features,
-            supervised_keys=None,
             homepage=_HOMEPAGE,
             license=_LICENSE,
             citation=_CITATION,
-            version=_VERSION,
         )
 
     def aihub_downloader(self, recv_path: Path) -> None:
@@ -194,7 +203,6 @@ class KsponSpeech(GeneratorBasedBuilder):
             path_segment = path.split("/")
             pcm_audio = audio_zip_dict[path_segment[0]].open(audio_file_info[path_segment[-1]]).read()
             try:
-
                 bytes_value = np.frombuffer(pcm_audio, dtype=np.int16).astype(np.float32) / 32767
                 buffer = io.BytesIO(bytes())
                 # ksponspeech는 무조건 고정임.

@@ -286,7 +286,7 @@ class KoAudioCaps(GeneratorBasedBuilder):
 
         finish_shard_ls = list()
         for shard_idx in range(self.shard_num):
-            dir_name = f"[{gpt_version}]{_DATANAME}-{self.shard_num}/{shard_idx+1:0{digits}d}"
+            dir_name = f"[{gpt_version}]{_DATANAME}-{self.shard_num}/{shard_idx + 1:0{digits}d}"
             cache_file_name = cache_path.joinpath(dir_name)
 
             if cache_file_name.exists():
