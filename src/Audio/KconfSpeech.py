@@ -181,7 +181,7 @@ class KconfSpeech(GeneratorBasedBuilder):
                     "sentence": Value("string"),
                     "metadata": {
                         "version": Value("string"),
-                        "date": Value("date32"),
+                        "date": Value("string"),
                         "typeInfo": {
                             "category": Value("string"),
                             "subcategory": Value("string"),
@@ -365,7 +365,8 @@ class KconfSpeech(GeneratorBasedBuilder):
 
             for _id, wav_ls in src_dict.items():
                 meta = [lbl for lbl in lbl_dict[_id] if "json" in lbl.filename][0]
-                text_ls = [lbl for lbl in lbl_dict[_id] if "txt" in lbl.filename]
+                txt_ls = natsorted([lbl for lbl in lbl_dict[_id] if "txt" in lbl.filename], key=lambda x: x.filename)
+                wav_ls = natsorted(wav_ls, key=lambda x: x.filename)
 
                 meta = json.loads(lbl_zip.open(meta).read().decode("utf-8"))
 
@@ -377,7 +378,13 @@ class KconfSpeech(GeneratorBasedBuilder):
                 dialogs = {x["audioPath"].split("/")[-1]: x for x in dialogs}
                 meta["dataSet"]["dialogs"] = []
 
-                for txt_info, wav_info in zip(text_ls, wav_ls):
+                for txt_info, wav_info in zip(txt_ls, wav_ls):
+                    txt_info_name, wav_info_name = Path(txt_info.filename), Path(wav_info.filename)
+
+                    if txt_info_name.stem != wav_info_name.stem:
+                        logger.warning(f"txt 데이터: {txt_info_name.stem}, wav 데이터: {wav_info_name.stem}")
+                        continue
+
                     filename = wav_info.filename.split("/")[-1]
                     raw_meta = deepcopy(meta)
 
@@ -385,7 +392,7 @@ class KconfSpeech(GeneratorBasedBuilder):
                     raw_meta["dataSet"]["typeInfo"]["speakers"] = [speakers[dialogs[filename]["speaker"]]]
 
                     yield {
-                        "id": _id,
+                        "id": "/".join([*txt_info_name.parts[:-1], txt_info_name.stem]),
                         "sentence": lbl_zip.open(txt_info).read().decode("utf-8"),
                         "audio": src_zip.open(wav_info).read(),
                         "metadata": raw_meta["dataSet"],
