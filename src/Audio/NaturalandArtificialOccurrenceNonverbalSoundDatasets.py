@@ -3,11 +3,13 @@ import json
 import os
 from pathlib import Path
 from tarfile import TarFile
+from typing import Generator, List
 from zipfile import ZipFile
 
 import datasets
 import requests
-from datasets import Audio, BuilderConfig, DatasetInfo, Features, Sequence, Value
+from datasets import Audio, BuilderConfig, DatasetInfo, Features, Sequence, Split, SplitGenerator, Value
+from datasets import logging as ds_logging
 from tqdm import tqdm
 
 
@@ -27,6 +29,9 @@ SAMPLE_RATE = 44100
 
 
 _DESCRIPTION = """현실에 적용될 수 있는 인공 청각지능 발달에 필요한 데이터를 다양한 환경적 요인을 고려한 형태로 구축하는 것을 목적으로 함"""
+
+ds_logging.set_verbosity_info()
+logger = ds_logging.get_logger("datasets")
 
 
 class NaturalandArtificialOccurrenceNonverbalSoundDatasets(datasets.GeneratorBasedBuilder):
@@ -80,7 +85,7 @@ class NaturalandArtificialOccurrenceNonverbalSoundDatasets(datasets.GeneratorBas
                     "NumSegmentation": Value("int32"),
                     "Segmentations": [Sequence(feature=Value("float32"))],
                 },
-                "audio": Audio(44100),
+                "audio": Audio(SAMPLE_RATE),
             }
         )
         return DatasetInfo(
@@ -91,99 +96,140 @@ class NaturalandArtificialOccurrenceNonverbalSoundDatasets(datasets.GeneratorBas
             license=_LICENSE,
         )
 
-    def aihub_downloader(self, recv_path: Path):
-        aihub_id = os.getenv("AIHUB_ID", None)
-        aihub_pass = os.getenv("AIHUB_PASS", None)
+    def _aihub_downloader(self, download_path: Path) -> List[Path]:
+        def download_from_aihub(download_path: Path, apikey: str) -> None:
+            # 이유는 모르겠는데 try를 두번 겹쳐야지 정상 동작하더라.
+            try:
+                try:
+                    with TarFile.open(download_path, "r") as tar:
+                        tar.getmembers()
+                        return None
+                except Exception as e:
+                    msg = f"tar 파일이 손상되었다. {e} 손상된 파일은 삭제하고 다시 다운로드 받는다."
+                    logger.warning(msg)
+                    download_path.unlink()
+            except BaseException:
+                pass
 
-        if not aihub_id:
-            raise ValueError(
-                """AIHUB_ID가 지정되지 않았습니다. `os.environ["AIHUB_ID"]="your_id"`로 ID를 지정해 주세요"""
+            headers, params = {"apikey": apikey}, {"fileSn": "all"}
+            response = requests.get(
+                DOWNLOAD_URL,
+                headers=headers,
+                params=params,
+                stream=True,
             )
-        if not aihub_pass:
-            raise ValueError(
-                """AIHUB_PASS가 지정되지 않았습니다. `os.environ["AIHUB_PASS"]="your_pass"`로 ID를 지정해 주세요"""
-            )
 
-        response = requests.get(
-            DOWNLOAD_URL,
-            headers={"id": aihub_id, "pass": aihub_pass},
-            params={"fileSn": "all"},
-            stream=True,
-        )
+            if response.status_code == 502:
+                raise BaseException(
+                    "다운로드 서비스는 홈페이지(https://aihub.or.kr)에서 신청 및 승인 후 이용 가능 합니다."
+                )
+            if response.status_code != 200:
+                raise BaseException(f"Download failed with HTTP status code: {response.status_code}")
 
-        if response.status_code != 200:
-            raise BaseException(f"Download failed with HTTP status code: {response.status_code}")
+            logger.info("다운로드 시작!")
+            downloaded_bytes = 0
+            data_file = open(download_path.as_posix(), "wb")
+            with tqdm(total=round(DATASET_SIZE * 1024**2)) as pbar:
+                for chunk in response.iter_content(chunk_size=1024):
+                    data_file.write(chunk)
+                    downloaded_bytes += len(chunk)
 
-        with open(recv_path, "wb") as file:
-            # chunk_size는 byte수
-            for chunk in tqdm(response.iter_content(chunk_size=1024)):
-                file.write(chunk)
+                    pbar.update(1)
+                    prefix = f"Downloaded (GB): {downloaded_bytes / (1024**3):.4f}/{DATASET_SIZE}"
+                    pbar.set_postfix_str(prefix)
 
-    def unzip_data(self, tar_file: Path, unzip_dir: Path) -> list:
-        with TarFile(tar_file, "r") as mytar:
-            mytar.extractall(unzip_dir)
+            data_file.close()
+
+        def concat_zip_part(data_dir: Path) -> None:
+            """데이터
+            ┣ dataset_0.zip.part0
+            ┣ dataset_1.zip.part0
+            ┣ dataset_1.zip.part1073741824
+            ┣ dataset_1.zip.part10737418240
+            ┣ dataset_1.zip.part11811160064
+            ┣ dataset_1.zip.part12884901888
+            ┣ dataset_1.zip.part13958643712
+            ┣ dataset_1.zip.part2147483648
+            AI-HUB에서 다운받는 데이터는 part로 나뉘어져 있어서 병합할 필요가 있다."""
+            part_dict = dict()
+            for part_path in Path(data_dir).rglob("*.part*"):
+                parh_stem = str(part_path.parent.joinpath(part_path.stem))
+                part_dict.setdefault(parh_stem, list()).append(part_path)
+
+            for dst_path, part_path_ls in part_dict.items():
+                with open(dst_path, "wb") as byte_f:
+                    for part_path in natsorted(part_path_ls):
+                        byte_f.write(part_path.read_bytes())
+                        os.remove(part_path)
+
+        def unzip_tar_file(tar_file: Path, unzip_dir: Path) -> None:
+            with TarFile(tar_file, "r") as tar:
+                tar.extractall(unzip_dir)
+
             os.remove(tar_file)
 
-        part_glob = Path(unzip_dir).rglob("*.zip.part*")
+        data_dir = download_path.parent.joinpath(download_path.stem)
 
-        part_dict = dict()
-        for part_path in part_glob:
-            parh_stem = str(part_path.parent.joinpath(part_path.stem))
+        complete_file_path = data_dir.joinpath("download_complete")
 
-            if parh_stem not in part_dict:
-                part_dict[parh_stem] = list()
+        if complete_file_path.exists():
+            return list(data_dir.rglob("*.zip"))
 
-            part_dict[parh_stem].append(part_path)
+        aihub_api_key = os.getenv("AIHUB_API_KEY", None)
+        if not aihub_api_key:
+            raise ValueError(
+                """AIHUB_API_KEY가 지정되지 않았습니다. `os.environ["AIHUB_API_KEY"]="your_key"`로 ID를 지정해 주세요"""
+            )
 
-        for dst_path, part_path_ls in part_dict.items():
-            with open(dst_path, "wb") as byte_f:
-                for part_path in sorted(part_path_ls):
-                    byte_f.write(part_path.read_bytes())
-                    os.remove(part_path)
+        download_from_aihub(download_path, aihub_api_key)
+        unzip_tar_file(download_path, data_dir)
+        concat_zip_part(data_dir)
 
-        return list(unzip_dir.rglob("*.zip*"))
+        msg = "dataset builder에서 데이터 다시 다운받을지 말지를 결정하는 파일이다. 이거 지우면 aihub에서 데이터 다시 다운 받음."
+        complete_file_path.write_text(msg)
 
-    def _split_generators(self, dl_manager):
-        data_name = "Natural_and_Artificial_Occurrence_Nonverbal_Sound_Datasets"
+        return list(data_dir.rglob("*.zip"))
+
+    def _split_generators(self, dl_manager) -> List[SplitGenerator]:
         cache_dir = Path(dl_manager.download_config.cache_dir)
-        unzip_dir = cache_dir.joinpath(data_name)
 
-        if not unzip_dir.exists():
-            tar_file = cache_dir.joinpath(f"{data_name}.tar")
-            self.aihub_downloader(tar_file)
-            # 압축이 덜 출렸을 때를 고려해야 함.
-            zip_file_path = self.unzip_data(tar_file, unzip_dir)
-        else:
-            zip_file_path = list(unzip_dir.glob("**/*.zip"))
+        download_path = cache_dir.joinpath(f"{_DATANAME}.tar")
+        src_path_ls = self._aihub_downloader(download_path)
 
-        train_split = [x for x in zip_file_path if "Training" in str(x)]
-        valid_split = [x for x in zip_file_path if "Validation" in str(x)]
+        if self.config.name == "Noise":
+            train_src_ls = [path for path in src_path_ls if "Training" in path.as_posix()]
+            valid_src_ls = [path for path in src_path_ls if "Validation" in path.as_posix()]
+            split_generator_ls = [
+                SplitGenerator(
+                    name=Split.TRAIN,
+                    gen_kwargs={
+                        "file_ls": train_src_ls,
+                        "split": "train",
+                    },
+                ),
+                SplitGenerator(
+                    name=Split.VALIDATION,
+                    gen_kwargs={
+                        "file_ls": valid_src_ls,
+                        "split": "validation",
+                    },
+                ),
+            ]
 
-        return [
-            datasets.SplitGenerator(
-                name=datasets.Split.TRAIN,
-                gen_kwargs={
-                    "filepath": train_split,
-                    "split": "train",
-                },
-            ),
-            datasets.SplitGenerator(
-                name=datasets.Split.VALIDATION,
-                gen_kwargs={
-                    "filepath": valid_split,
-                    "split": "valid",
-                },
-            ),
-        ]
+        return split_generator_ls
 
-    def _generate_examples(self, filepath, split):
-        source_ls = [ZipFile(x) for x in filepath if "원천데이터" in str(x)]
+    def _generate_examples(self, **kwagrs) -> Generator:
+        if self.config.name == "Noise":
+            for idx, data in enumerate(self._asr_generate_examples(**kwagrs)):
+                yield idx, data
+
+    def _asr_generate_examples(self, file_ls: List[Path], split: str):
+        source_ls = [ZipFile(x) for x in file_ls if "원천데이터" in str(x)]
         source_ls = sorted(source_ls, key=lambda x: x.filename)
 
-        label_ls = [ZipFile(x) for x in filepath if "라벨링데이터" in str(x)]
+        label_ls = [ZipFile(x) for x in file_ls if "라벨링데이터" in str(x)]
         label_ls = sorted(label_ls, key=lambda x: x.filename)
 
-        id_count = 0
         for source_zip, label_zip in zip(source_ls, label_ls):
             file_zip = zip(source_zip.filelist, label_zip.filelist)
             for source_file, label_file in file_zip:
@@ -194,6 +240,4 @@ class NaturalandArtificialOccurrenceNonverbalSoundDatasets(datasets.GeneratorBas
                 label = json.loads(label_zip.open(label_file).read())
                 label["audio"] = source
 
-                yield (id_count, label)
-
-                id_count += 1
+                yield label

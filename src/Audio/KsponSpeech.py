@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
 import io
 import os
 import re
 import wave
 from pathlib import Path
 from tarfile import TarFile
-from typing import List
+from typing import Generator, List
 from zipfile import ZipFile
 
 import numpy as np
@@ -21,6 +20,7 @@ from datasets import (
     SplitGenerator,
     Value,
 )
+from datasets import logging as ds_logging
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -57,6 +57,9 @@ _DESCRIPTION = """KsponSpeech is a large-scale spontaneous speech corpus of Kore
 
 search_audio_zip = re.compile("KsponSpeech_(0[1-5]|eval).zip")
 
+ds_logging.set_verbosity_info()
+logger = ds_logging.get_logger("datasets")
+
 
 class KsponSpeech(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
@@ -87,75 +90,109 @@ class KsponSpeech(GeneratorBasedBuilder):
             citation=_CITATION,
         )
 
-    def aihub_downloader(self, recv_path: Path) -> None:
-        aihub_id = os.getenv("AIHUB_ID", None)
-        aihub_pass = os.getenv("AIHUB_PASS", None)
+    def _aihub_downloader(self, download_path: Path) -> List[Path]:
+        def download_from_aihub(download_path: Path, apikey: str) -> None:
+            # 이유는 모르겠는데 try를 두번 겹쳐야지 정상 동작하더라.
+            try:
+                try:
+                    with TarFile.open(download_path, "r") as tar:
+                        tar.getmembers()
+                        return None
+                except Exception as e:
+                    msg = f"tar 파일이 손상되었다. {e} 손상된 파일은 삭제하고 다시 다운로드 받는다."
+                    logger.warning(msg)
+                    download_path.unlink()
+            except BaseException:
+                pass
 
-        if not aihub_id:
-            raise ValueError(
-                """AIHUB_ID가 지정되지 않았습니다. `os.environ["AIHUB_ID"]="your_id"`로 ID를 지정해 주세요"""
+            headers, params = {"apikey": apikey}, {"fileSn": "all"}
+            response = requests.get(
+                DOWNLOAD_URL,
+                headers=headers,
+                params=params,
+                stream=True,
             )
-        if not aihub_pass:
+
+            if response.status_code == 502:
+                raise BaseException(
+                    "다운로드 서비스는 홈페이지(https://aihub.or.kr)에서 신청 및 승인 후 이용 가능 합니다."
+                )
+            if response.status_code != 200:
+                raise BaseException(f"Download failed with HTTP status code: {response.status_code}")
+
+            logger.info("다운로드 시작!")
+            downloaded_bytes = 0
+            data_file = open(download_path.as_posix(), "wb")
+            with tqdm(total=round(DATASET_SIZE * 1024**2)) as pbar:
+                for chunk in response.iter_content(chunk_size=1024):
+                    data_file.write(chunk)
+                    downloaded_bytes += len(chunk)
+
+                    pbar.update(1)
+                    prefix = f"Downloaded (GB): {downloaded_bytes / (1024**3):.4f}/{DATASET_SIZE}"
+                    pbar.set_postfix_str(prefix)
+
+            data_file.close()
+
+        def concat_zip_part(data_dir: Path) -> None:
+            """데이터
+            ┣ dataset_0.zip.part0
+            ┣ dataset_1.zip.part0
+            ┣ dataset_1.zip.part1073741824
+            ┣ dataset_1.zip.part10737418240
+            ┣ dataset_1.zip.part11811160064
+            ┣ dataset_1.zip.part12884901888
+            ┣ dataset_1.zip.part13958643712
+            ┣ dataset_1.zip.part2147483648
+            AI-HUB에서 다운받는 데이터는 part로 나뉘어져 있어서 병합할 필요가 있다."""
+            part_dict = dict()
+            for part_path in Path(data_dir).rglob("*.part*"):
+                parh_stem = str(part_path.parent.joinpath(part_path.stem))
+                part_dict.setdefault(parh_stem, list()).append(part_path)
+
+            for dst_path, part_path_ls in part_dict.items():
+                with open(dst_path, "wb") as byte_f:
+                    for part_path in natsorted(part_path_ls):
+                        byte_f.write(part_path.read_bytes())
+                        os.remove(part_path)
+
+        def unzip_tar_file(tar_file: Path, unzip_dir: Path) -> None:
+            with TarFile(tar_file, "r") as tar:
+                tar.extractall(unzip_dir)
+
+            os.remove(tar_file)
+
+        data_dir = download_path.parent.joinpath(download_path.stem)
+
+        complete_file_path = data_dir.joinpath("download_complete")
+
+        if complete_file_path.exists():
+            return list(data_dir.rglob("*.zip"))
+
+        aihub_api_key = os.getenv("AIHUB_API_KEY", None)
+        if not aihub_api_key:
             raise ValueError(
-                """AIHUB_PASS가 지정되지 않았습니다. `os.environ["AIHUB_PASS"]="your_pass"`로 ID를 지정해 주세요"""
+                """AIHUB_API_KEY가 지정되지 않았습니다. `os.environ["AIHUB_API_KEY"]="your_key"`로 ID를 지정해 주세요"""
             )
 
-        response = requests.get(
-            DOWNLOAD_URL,
-            headers={"id": aihub_id, "pass": aihub_pass},
-            params={"fileSn": "all"},
-            stream=True,
-        )
+        download_from_aihub(download_path, aihub_api_key)
+        unzip_tar_file(download_path, data_dir)
+        concat_zip_part(data_dir)
 
-        if response.status_code != 200:
-            raise BaseException(f"Download failed with HTTP status code: {response.status_code}")
+        msg = "dataset builder에서 데이터 다시 다운받을지 말지를 결정하는 파일이다. 이거 지우면 aihub에서 데이터 다시 다운 받음."
+        complete_file_path.write_text(msg)
 
-        with open(recv_path, "wb") as file:
-            # chunk_size는 byte수
-            for chunk in tqdm(response.iter_content(chunk_size=1024)):
-                file.write(chunk)
-
-    def concat_zip_part(self, unzip_dir: Path) -> None:
-        part_glob = Path(unzip_dir).rglob("*.zip.part*")
-
-        part_dict = dict()
-        for part_path in part_glob:
-            parh_stem = str(part_path.parent.joinpath(part_path.stem))
-
-            if parh_stem not in part_dict:
-                part_dict[parh_stem] = list()
-
-            part_dict[parh_stem].append(part_path)
-
-        for dst_path, part_path_ls in part_dict.items():
-            with open(dst_path, "wb") as byte_f:
-                for part_path in natsorted(part_path_ls):
-                    byte_f.write(part_path.read_bytes())
-                    os.remove(part_path)
+        return list(data_dir.rglob("*.zip"))
 
     def _split_generators(self, dl_manager) -> List[SplitGenerator]:  # type: ignore
         cache_dir = Path(dl_manager.download_config.cache_dir)
 
-        unzip_dir = cache_dir.joinpath(_DATANAME)
-        tar_file = cache_dir.joinpath(f"{_DATANAME}.tar")
-
-        if tar_file.exists():
-            os.remove(tar_file)
-
-        if not unzip_dir.exists():
-            self.aihub_downloader(tar_file)
-
-            with TarFile(tar_file, "r") as mytar:
-                mytar.extractall(unzip_dir)
-                os.remove(tar_file)
-
-            self.concat_zip_part(unzip_dir)
-
-        zip_file_path = list(unzip_dir.rglob("*.zip"))
+        download_path = cache_dir.joinpath(f"{_DATANAME}.tar")
+        src_path_ls = self._aihub_downloader(download_path)
 
         # TODO: need clean code!!!
         audio_file_info = dict()
-        for path in zip_file_path:
+        for path in src_path_ls:
             if not search_audio_zip.findall(str(path)):
                 continue
 
@@ -164,10 +201,10 @@ class KsponSpeech(GeneratorBasedBuilder):
                 {file.filename.split("/")[-1]: file for file in zip_file.filelist if "pcm" in file.filename}
             )
 
-        label_zip = [ZipFile(str(x)) for x in zip_file_path if "KsponSpeech_scripts" in str(str(x))][0]
+        label_zip = [ZipFile(str(x)) for x in src_path_ls if "KsponSpeech_scripts" in str(str(x))][0]
 
-        get_zip_file_name: str = lambda x: x.stem.split("/")[-1].replace(".zip", "")
-        audio_zip_dict = {get_zip_file_name(x): ZipFile(x) for x in zip_file_path if search_audio_zip.findall(str(x))}
+        get_zip_file_name: str = lambda x: x.stem.split("/")[-1].replace(".zip", "")  # noqa: E731
+        audio_zip_dict = {get_zip_file_name(x): ZipFile(x) for x in src_path_ls if search_audio_zip.findall(str(x))}
 
         for zip_info in label_zip.filelist:
             label = label_zip.open(zip_info).read().decode("utf-8")
@@ -188,14 +225,19 @@ class KsponSpeech(GeneratorBasedBuilder):
                 },
             )
 
-    def _generate_examples(
+    def _generate_examples(self, **kwagrs) -> Generator:
+        if self.config.name == "ASR":
+            for idx, data in enumerate(self._asr_generate_examples(**kwagrs)):
+                yield idx, data
+
+    def _asr_generate_examples(
         self,
         label_ls: list,
         audio_file_info: dict,
         audio_zip_dict: dict,
         split: str,
     ):
-        for _id, label in enumerate(label_ls):
+        for label in label_ls:
             path, sentence = tuple(label.split(" :: "))
 
             # KsponSpeech_05/KsponSpeech_0623/KsponSpeech_622536.pcm
@@ -216,6 +258,8 @@ class KsponSpeech(GeneratorBasedBuilder):
                     wave_file.setframerate(16000)
                     wave_file.writeframes(pcm_audio)
 
-            data = {"audio": buffer.getvalue(), "sentence": sentence, "id": path_segment[-1].replace(".pcm", "")}
-
-            yield (_id, data)
+            yield {
+                "audio": buffer.getvalue(),
+                "sentence": sentence,
+                "id": path_segment[-1].replace(".pcm", ""),
+            }
