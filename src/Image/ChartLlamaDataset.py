@@ -24,7 +24,7 @@ set_seed(42)
 
 CITATION = """\
 @misc{han2023chartllama,
-      title={ChartLlama: A Multimodal LLM for Chart Understanding and Generation}, 
+      title={ChartLlama: A Multimodal LLM for Chart Understanding and Generation},
       author={Yucheng Han and Chi Zhang and Xin Chen and Xu Yang and Zhibin Wang and Gang Yu and Bin Fu and Hanwang Zhang},
       year={2023},
       eprint={2311.16483},
@@ -113,7 +113,7 @@ class ChartLlamaDataset(GeneratorBasedBuilder):
             data_dir="SINGLE-SFT",
             version="1.0.0",
             description="""GPT-4를 활용하여 고품질의 명령어 튜닝 데이터 세트를 생성한 데이터.
-유연성 덕분에 낮은 리소스 지출을 유지하면서 다양하고 고품질의 인스트럭션 튜닝 데이터를 일관되고 효율적으로 생성함. 
+유연성 덕분에 낮은 리소스 지출을 유지하면서 다양하고 고품질의 인스트럭션 튜닝 데이터를 일관되고 효율적으로 생성함.
 표 형식의 데이터 생성, 차트 수치 생성, 인스트럭션 튜닝 데이터 설계를 각각 다른 단계에서 담당하는 다단계 데이터 생성 프로세스를 개발.
 원본 데이터 그대로\n"""
             + DESCRIPTION,
@@ -123,7 +123,7 @@ class ChartLlamaDataset(GeneratorBasedBuilder):
             data_dir="MULTI-SFT",
             version="1.0.0",
             description="""GPT-4를 활용하여 고품질의 명령어 튜닝 데이터 세트를 생성한 데이터.
-유연성 덕분에 낮은 리소스 지출을 유지하면서 다양하고 고품질의 인스트럭션 튜닝 데이터를 일관되고 효율적으로 생성함. 
+유연성 덕분에 낮은 리소스 지출을 유지하면서 다양하고 고품질의 인스트럭션 튜닝 데이터를 일관되고 효율적으로 생성함.
 표 형식의 데이터 생성, 차트 수치 생성, 인스트럭션 튜닝 데이터 설계를 각각 다른 단계에서 담당하는 다단계 데이터 생성 프로세스를 개발.
 데이터가 한 이미지에 여러 대화를 이어놓은 형태다 보니 한 이미지로 멀티턴 대화 데이터를 만듬.\n"""
             + DESCRIPTION,

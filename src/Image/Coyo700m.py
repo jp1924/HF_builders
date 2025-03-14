@@ -14,7 +14,6 @@ from datasets import (
     Split,
     SplitGenerator,
     Value,
-    Version,
     load_dataset,
 )
 from img2dataset.downloader import download_image_with_retry

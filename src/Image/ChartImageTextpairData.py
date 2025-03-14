@@ -1,6 +1,5 @@
 import json
 import os
-import random
 from pathlib import Path
 from tarfile import TarFile
 from typing import Generator, List
