@@ -29,7 +29,6 @@ from datasets import (
     Split,
     SplitGenerator,
     Value,
-    Version,
 )
 from natsort import natsorted
 from tqdm import tqdm
@@ -43,17 +42,6 @@ _CITATION = """
                Lubomir D. Bourdev and
                Ross B. Girshick and
                James Hays and
-
-
-
-
-
-
-
-
-
-
-
                Pietro Perona and
                Deva Ramanan and
                Piotr Doll{\'{a}}r and
@@ -71,10 +59,6 @@ _CITATION = """
 }
 """
 
-_DESCRIPTION = """
-MS COCO is a large-scale object detection, segmentation, and captioning dataset.
-COCO has several features: Object segmentation, Recognition in context, Superpixel stuff segmentation, 330K images (>200K labeled), 1.5 million object instances, 80 object categories, 91 stuff categories, 5 captions per image, 250,000 people with keypoints.
-"""
 
 _HOMEPAGE = "https://cocodataset.org/#home"
 
@@ -93,30 +77,28 @@ _SPLIT_MAP = {"train": "train2014", "validation": "val2014"}
 
 DATASET_KEY = "261"
 DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
-_HOMEPAGE = (
-    f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"
-)
+_HOMEPAGE = f"https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn={DATASET_KEY}"  # nolint
 
-_VERSION = "1.0.0"
 _DATANAME = "KoreanImageCaptioningDataset"
 
 
-class KoreanImageCaptioningDataset(GeneratorBasedBuilder):
-    VERSION = Version(_VERSION)
+_DESCRIPTION = """MS COCO is a large-scale object detection, segmentation, and captioning dataset.
+COCO has several features: Object segmentation, Recognition in context, Superpixel stuff segmentation, 330K images (>200K labeled), 1.5 million object instances, 80 object categories, 91 stuff categories, 5 captions per image, 250,000 people with keypoints."""
 
+
+class KoreanImageCaptioningDataset(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
         BuilderConfig(
             name="default",
-            version=VERSION,
-            description="Same as 2014 but with all captions of one image gathered in a single example",
+            version="1.0.0",
+            description="Same as 2014 but with all captions of one image gathered in a single example" + _DESCRIPTION,
         ),
     ]
 
     DEFAULT_CONFIG_NAME = "default"
-    VERSION = _VERSION
 
     def _info(self):
-        _FEATURES = Features(
+        features = Features(
             {
                 "id": Value("int32"),
                 "image": Image(),
@@ -134,8 +116,9 @@ class KoreanImageCaptioningDataset(GeneratorBasedBuilder):
             }
         )
         return DatasetInfo(
-            description=_DESCRIPTION,
-            features=_FEATURES,
+            description=self.config.description,
+            version=self.config.version,
+            features=features,
             homepage=_HOMEPAGE,
             license=_LICENSE,
             citation=_CITATION,

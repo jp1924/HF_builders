@@ -22,6 +22,8 @@ from img2dataset.resizer import Resizer
 from PIL import Image as PIL_Image
 
 
+_HOMEPAGE = "https://huggingface.co/datasets/Bingsu/laion2B-multi-korean-subset"
+
 _URLs = {
     "157cf2686bec271f": "https://huggingface.co/datasets/Bingsu/laion2B-multi-korean-subset/resolve/main/data/train-00000-of-00006-5fe89370890da24f.parquet?download=true",
     "27c90b30911ef7aa": "https://huggingface.co/datasets/Bingsu/laion2B-multi-korean-subset/resolve/main/data/train-00001-of-00006-aab9b1bf52a2df3f.parquet?download=true",
@@ -30,14 +32,17 @@ _URLs = {
     "12f9b17a7d230ec9": "https://huggingface.co/datasets/Bingsu/laion2B-multi-korean-subset/resolve/main/data/train-00004-of-00006-829cbdc252d37dd4.parquet?download=true",
     "561e693a58593192": "https://huggingface.co/datasets/Bingsu/laion2B-multi-korean-subset/resolve/main/data/train-00005-of-00006-5435e409ba6a048d.parquet?download=true",
 }
-_DESCRIPTION = """a subset data of laion/laion2B-multi, including only korean"""
-_VERSION = Version("1.0.0")
 
 
 class Laion2BMultiKoreanSubset(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION, description=_DESCRIPTION)]
+    BUILDER_CONFIGS = [
+        BuilderConfig(
+            name="default",
+            version="1.0.0",
+            description="""a subset data of laion/laion2B-multi, including only korean""",
+        ),
+    ]
     DEFAULT_CONFIG_NAME = "default"
-    VERSION = _VERSION
 
     def _info(self):
         features = Features(
@@ -68,9 +73,10 @@ class Laion2BMultiKoreanSubset(GeneratorBasedBuilder):
         self.batch_size = os.getenv("LAION_BATCH_SIZE", 1000)
 
         return DatasetInfo(
-            description=_DESCRIPTION,
-            version=_VERSION,
+            description=self.config.description,
+            version=self.config.version,
             features=features,
+            homepage=_HOMEPAGE,
         )
 
     def _split_generators(self, dl_manager):

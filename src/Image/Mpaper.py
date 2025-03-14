@@ -28,6 +28,16 @@ from tqdm import tqdm
 from transformers.trainer_pt_utils import get_length_grouped_indices
 
 
+_HOMEPAGE = "https://huggingface.co/datasets/mPLUG/M-Paper"
+_LICENSE = "Apache License 2.0"
+_CITATION = """@article{hu2023paperowl,
+  title={mplug-paperowl: Scientific diagram analysis with the multimodal large language model},
+  author={Hu, Anwen and Shi, Yaya and Xu, Haiyang and Ye, Jiabo and Ye, Qinghao and Yan, Ming and Li, Chenliang and Qian, Qi and Zhang, Ji and Huang, Fei},
+  journal={arXiv preprint arXiv:2311.18248},
+  year={2023}
+}"""
+_DESCRIPTION = """M-Paper is a Scientific Diagram Analysis dataset based on 48k high-quality arxiv papers (2021~2023) on Machine Learning. M-Paper contains 447k diagram images and supports 3 tasks: Diagram Captioning, Diagram Analysis and Outline Recommendation."""
+
 IMG_URLS = {
     "partial-imgs.00": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.00",
     "partial-imgs.01": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/partial-imgs.01",
@@ -53,22 +63,10 @@ LABEL_URLS = {
     "3tasks_val.jsonl": "https://huggingface.co/datasets/mPLUG/M-Paper/resolve/main/sft/3tasks_val.jsonl",
 }
 
-_HOMEPAGE = "https://huggingface.co/datasets/mPLUG/M-Paper"
-_LICENSE = "Apache License 2.0"
-_CITATION = """@article{hu2023paperowl,
-  title={mplug-paperowl: Scientific diagram analysis with the multimodal large language model},
-  author={Hu, Anwen and Shi, Yaya and Xu, Haiyang and Ye, Jiabo and Ye, Qinghao and Yan, Ming and Li, Chenliang and Qian, Qi and Zhang, Ji and Huang, Fei},
-  journal={arXiv preprint arXiv:2311.18248},
-  year={2023}
-}"""
-_DESCRIPTION = """M-Paper is a Scientific Diagram Analysis dataset based on 48k high-quality arxiv papers (2021~2023) on Machine Learning. M-Paper contains 447k diagram images and supports 3 tasks: Diagram Captioning, Diagram Analysis and Outline Recommendation."""
-_VERSION = Version("1.0.0")
-
 
 class MPaper(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
+    BUILDER_CONFIGS = [BuilderConfig(name="default", version=Version("1.0.0"), description=_DESCRIPTION)]
     DEFAULT_CONFIG_NAME = "default"
-    VERSION = _VERSION
 
     def _info(self):
         self.features = Features(
@@ -92,12 +90,12 @@ class MPaper(GeneratorBasedBuilder):
         self.batch_size = int(os.getenv("Mpaper_BATCH_SIZE", "100"))
 
         return DatasetInfo(
-            description=_DESCRIPTION,
+            description=self.config.description,
+            version=self.config.version,
             features=self.features,
             homepage=_HOMEPAGE,
             license=_LICENSE,
             citation=_CITATION,
-            version=_VERSION,
         )
 
     def _split_generators(self, dl_manager):

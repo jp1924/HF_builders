@@ -14,12 +14,20 @@ from datasets import (
     Split,
     SplitGenerator,
     Value,
-    Version,
     load_dataset,
 )
 from img2dataset.downloader import download_image_with_retry
 from img2dataset.resizer import Resizer
 from PIL import Image as PIL_Image
+
+
+_HOMEPAGE = "https://huggingface.co/datasets/QuoQA-NLP/KoCC3M"
+
+
+_DATANAME = "KoCC3M"
+
+
+_DESCRIPTION = """CC3M of flax-community/conceptual-captions-12 translated from English to Korean."""
 
 
 TRAIN_URLs = {
@@ -29,14 +37,6 @@ TRAIN_URLs = {
 VALID_URLs = {
     "27c90b30911ef7aa": "https://huggingface.co/datasets/QuoQA-NLP/KoCC3M/resolve/main/data/validation-00000-of-00001-168f14d7fd7256ba.parquet?download=true",
 }
-
-_HOMEPAGE = "https://huggingface.co/datasets/QuoQA-NLP/KoCC3M"
-
-
-_DATANAME = "KoCC3M"
-
-
-_DESCRIPTION = """CC3M of flax-community/conceptual-captions-12 translated from English to Korean."""
 
 
 class KoCC3M(GeneratorBasedBuilder):

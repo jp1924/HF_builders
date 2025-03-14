@@ -36,8 +36,7 @@ DESCRIPTION = """"# 데이터 구조
     "answer": "The answer is The lowest mortality rate recorded is 6.81 for Australia in 2010..",
 }
 얘들 한 이미지 마다 여러 질문 답변 쌍의 데이터로 만들어 놨는데
-question_id가 이미지 이름으로 만들어 졌다 보니 중복되는 녀석들이 존재함.
-"""
+question_id가 이미지 이름으로 만들어 졌다 보니 중복되는 녀석들이 존재함."""
 
 
 def convert_mm_content(content: str, img_token: str):
@@ -85,16 +84,18 @@ class MultiModalSelfInstruct(GeneratorBasedBuilder):
     DEFAULT_CONFIG_NAME = "SINGLE-SFT"
 
     def _info(self):
-        features = {
-            "id": Value("string"),
-            "image": Image(),
-            "conversations": [{"role": Value("string"), "content": Value("string")}],
-        }
+        features = Features(
+            {
+                "id": Value("string"),
+                "image": Image(),
+                "conversations": [{"role": Value("string"), "content": Value("string")}],
+            }
+        )
 
         return DatasetInfo(
-            features=Features(features),
-            version=Version(self.config.version),
             description=self.config.description,
+            version=self.config.version,
+            features=features,
             homepage=HOMEPAGE,
             citation=CITATION,
         )

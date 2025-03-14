@@ -61,13 +61,11 @@ _HOMEPAGE = "https://laion.ai/blog/laion-400-open-dataset/"
 _LICENSE = "We distribute the metadata dataset (the parquet files) under the most open Creative Common CC-BY 4.0 license, which poses no particular restriction. The images are under their copyright."
 _CITATION = """Schuhmann, C., Vencu, R., Beaumont, R., Kaczmarczyk, R., Mullis, C., Katta, A., Coombes, T., Jitsev, J., & Komatsuzaki, A. (2021). LAION-400M: Open Dataset of CLIP-Filtered 400 Million Image-Text Pairs. arXiv. https://doi.org/10.48550/arXiv.2111.02114"""
 _DESCRIPTION = """Multi-modal language-vision models trained on hundreds of millions of image-text pairs (e.g. CLIP, DALL-E) gained a recent surge, showing remarkable capability to perform zero- or few-shot learning and transfer even in absence of per-sample labels on target image data. Despite this trend, to date there has been no publicly available datasets of sufficient scale for training such models from scratch. To address this issue, in a community effort we build and release for public LAION-400M, a dataset with CLIP-filtered 400 million image-text pairs, their CLIP embeddings and kNN indices that allow efficient similarity search."""
-_VERSION = Version("1.0.0")
 
 
 class Laion400m(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
+    BUILDER_CONFIGS = [BuilderConfig(name="default", version="1.0.0", description=_DESCRIPTION)]
     DEFAULT_CONFIG_NAME = "default"
-    VERSION = _VERSION
 
     def _info(self):
         features = Features(
@@ -98,12 +96,12 @@ class Laion400m(GeneratorBasedBuilder):
         self.batch_size = os.getenv("LAION_BATCH_SIZE", 1000)
 
         return DatasetInfo(
-            description=_DESCRIPTION,
+            description=self.config.description,
+            version=self.config.version,
             features=features,
             homepage=_HOMEPAGE,
             license=_LICENSE,
             citation=_CITATION,
-            version=_VERSION,
         )
 
     def _split_generators(self, dl_manager):

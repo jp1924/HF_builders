@@ -27,6 +27,19 @@ from tqdm import tqdm
 from transformers.trainer_pt_utils import get_length_grouped_indices
 
 
+_LICENSE = "Apache License 2.0"
+_CITATION = """@article{hu2023paperowl,
+  title={mplug-paperowl: Scientific diagram analysis with the multimodal large language model},
+  author={Hu, Anwen and Shi, Yaya and Xu, Haiyang and Ye, Jiabo and Ye, Qinghao and Yan, Ming and Li, Chenliang and Qian, Qi and Zhang, Ji and Huang, Fei},
+  journal={arXiv preprint arXiv:2311.18248},
+  year={2023}
+}"""
+
+_HOMEPAGE = "https://huggingface.co/datasets/mPLUG/M-Paper"
+
+
+_DESCRIPTION = """M-Paper is a Scientific Diagram Analysis dataset based on 48k high-quality arxiv papers (2021~2023) on Machine Learning. M-Paper contains 447k diagram images and supports 3 tasks: Diagram Captioning, Diagram Analysis and Outline Recommendation."""
+
 TRAIN_IMG_URLS = {
     "partial-imgs.00": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.00",
     "partial-imgs.01": "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/partial-imgs.01",
@@ -41,19 +54,6 @@ TRAIN_LABEL_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/mai
 
 VALID_IMG_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/val_imgs.tar.gz"
 VALID_LABEL_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/val.jsonl"
-
-_LICENSE = "Apache License 2.0"
-_CITATION = """@article{hu2023paperowl,
-  title={mplug-paperowl: Scientific diagram analysis with the multimodal large language model},
-  author={Hu, Anwen and Shi, Yaya and Xu, Haiyang and Ye, Jiabo and Ye, Qinghao and Yan, Ming and Li, Chenliang and Qian, Qi and Zhang, Ji and Huang, Fei},
-  journal={arXiv preprint arXiv:2311.18248},
-  year={2023}
-}"""
-
-_HOMEPAGE = "https://huggingface.co/datasets/mPLUG/M-Paper"
-
-
-_DESCRIPTION = """M-Paper is a Scientific Diagram Analysis dataset based on 48k high-quality arxiv papers (2021~2023) on Machine Learning. M-Paper contains 447k diagram images and supports 3 tasks: Diagram Captioning, Diagram Analysis and Outline Recommendation."""
 
 
 class DocStruct4M(GeneratorBasedBuilder):

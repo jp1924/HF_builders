@@ -25,8 +25,6 @@ from tqdm import tqdm
 from transformers import set_seed
 
 
-set_seed(42)
-
 _LICENSE = """Apache-2.0 license"""
 _CITATION = """@misc{zheng2024multimodal,
       title={Multimodal Table Understanding}, 
@@ -65,19 +63,19 @@ EVALUATION_DATA = {
     "label_data": "https://huggingface.co/datasets/SpursgoZmy/MMTab/resolve/main/MMTab-eval_test_data_49K.json",
 }
 
+_DESCRIPTION = """MMTab based on 14 publicly available table datasets of 8 domains. We carefully design scripts to convert original textual tables in these datasets into table images highlighting a broad coverage of table structures and styles, and transform all task-specific samples into multimodal instruction-tuning samples with a unified format of <table image, input request, output response>."""
 
-_VERSION = "1.0.0"
+set_seed(42)
 
 
 class MMTab(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="pretraining", data_dir="pretraining", version=_VERSION),
-        BuilderConfig(name="instruction", data_dir="instruction", version=_VERSION),
-        BuilderConfig(name="evaluation", data_dir="evaluation", version=_VERSION),
+        BuilderConfig(name="pretraining", data_dir="pretraining", version="1.0.0", description=_DESCRIPTION),
+        BuilderConfig(name="instruction", data_dir="instruction", version="1.0.0", description=_DESCRIPTION),
+        BuilderConfig(name="evaluation", data_dir="evaluation", version="1.0.0", description=_DESCRIPTION),
     ]
     DEFAULT_CONFIG_NAME = "pretraining"
     DEFAULT_WRITER_BATCH_SIZE = 1000
-    VERSION = _VERSION
 
     def _info(self):
         if self.config.name == "pretraining":
@@ -119,6 +117,8 @@ class MMTab(GeneratorBasedBuilder):
             raise ValueError()
 
         return DatasetInfo(
+            description=self.config.description,
+            version=self.config.version,
             features=features,
             license=_LICENSE,
             citation=_CITATION,
@@ -224,7 +224,7 @@ class MMTab(GeneratorBasedBuilder):
             if not ocr_vqa_save_path.exists():
                 ocr_vqa_save_path.mkdir(parents=True, exist_ok=True)
                 for data_row in tqdm(ocr_vqa):
-                    file_path = ocr_vqa_save_path.joinpath(f'{data_row["image_id"]}.jpg')
+                    file_path = ocr_vqa_save_path.joinpath(f"{data_row['image_id']}.jpg")
                     data_row["image"].convert("RGB").save(file_path.as_posix())
 
             image_file_map.update({path.stem: path.as_posix() for path in ocr_vqa_save_path.rglob("*.*")})
@@ -285,7 +285,7 @@ class MMTab(GeneratorBasedBuilder):
                     "id": label[idx]["item_id"],
                     "image": image_file_map[label[idx]["image_id"]],
                     "conversations": [
-                        {"from": "Human", "value": f'<image>{label[idx]["input"]}'},
+                        {"from": "Human", "value": f"<image>{label[idx]['input']}"},
                         {"from": "gpt", "value": label[idx]["output"]},
                     ],
                     "question": label[idx]["input"],
