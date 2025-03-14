@@ -9,7 +9,10 @@ import datasets
 from datasets import Features, Image, Sequence, Value
 from PIL import Image as PIL_Image
 
+
 PIL_Image.MAX_IMAGE_PIXELS = 809549650
+
+_HOMEPAGE = "https://www.docvqa.org/"
 
 
 class DocVQA(datasets.GeneratorBasedBuilder):
@@ -31,6 +34,7 @@ class DocVQA(datasets.GeneratorBasedBuilder):
         )
 
         return datasets.DatasetInfo(
+            homepage=_HOMEPAGE,
             features=features,
             supervised_keys=None,
             citation=None,

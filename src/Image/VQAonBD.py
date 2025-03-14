@@ -7,6 +7,10 @@ from datasets import Features, Image, Value
 from natsort import natsorted
 from PIL import Image as PIL_Image
 
+
+_HOMEPAGE = "https://ilocr.iiit.ac.in/vqabd/"
+
+
 _DESCRIPTION = """Visual question answering generally aims to answer a query described in natural language, taking cues from the document image as the only input. As a part of this competition, we propose a visual question answering a dataset and baseline model from business document images. While a lot of work has already been done in the broader of this space, the questions from business documents present many niche challenges that may require cross-document referencing, additional numeric computations over the simple search query to reach the final solution, and so on. Further, since most business documents are usually presented in a tabular format, it may be non-trivial to leverage this structural conformity to answer more challenging queries. Given the unique nature of the problem, its tremendous prospect in the industry, layers of challenges to be tackled, and the recent surge of interest in the broader space of visual question answering, we believe this problem would interest the research community worldwide and attract good participation."""
 
 _URLs = {
@@ -46,11 +50,7 @@ class VQAonBD(datasets.GeneratorBasedBuilder):
             }
         )
 
-        return datasets.DatasetInfo(
-            features=features,
-            supervised_keys=None,
-            citation=None,
-        )
+        return datasets.DatasetInfo(features=features, homepage=_HOMEPAGE)
 
     def _split_generators(self, dl_manager):
         downloaded_files = dl_manager.download_and_extract(_URLs)

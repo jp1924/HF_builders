@@ -18,7 +18,6 @@ from datasets import (
     Split,
     SplitGenerator,
     Value,
-    Version,
     concatenate_datasets,
 )
 from datasets.config import DEFAULT_MAX_BATCH_SIZE
@@ -26,6 +25,25 @@ from PIL import Image as PIL_Image
 
 from transformers.trainer_pt_utils import get_length_grouped_indices
 
+
+_CITATION = """@misc{ye2023ureader,
+      title={UReader: Universal OCR-free Visually-situated Language Understanding with Multimodal Large Language Model}, 
+      author={Jiabo Ye and Anwen Hu and Haiyang Xu and Qinghao Ye and Ming Yan and Guohai Xu and Chenliang Li and Junfeng Tian and Qi Qian and Ji Zhang and Qin Jin and Liang He and Xin Alex Lin and Fei Huang},
+      year={2023},
+      eprint={2310.05126},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+@misc{ye2023mplugdocowl,
+      title={mPLUG-DocOwl: Modularized Multimodal Large Language Model for Document Understanding}, 
+      author={Jiabo Ye and Anwen Hu and Haiyang Xu and Qinghao Ye and Ming Yan and Yuhao Dan and Chenlin Zhao and Guohai Xu and Chenliang Li and Junfeng Tian and Qian Qi and Ji Zhang and Fei Huang},
+      year={2023},
+      eprint={2307.02499},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL}
+}"""
+
+_HOMEPAGE = "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/tree/main"
 
 URLS = {
     "WikiTableQuestions": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/WikiTableQuestions.tar",
@@ -41,13 +59,11 @@ URLS = {
     "TextVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/TextVQA.tar",
     "DocVQA": "https://huggingface.co/datasets/Mizukiluke/ureader-instruction-1.0/resolve/main/DocVQA.tar",
 }
-_VERSION = Version("1.1.0")
 
 
 class UReaderInstruction(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
+    BUILDER_CONFIGS = [BuilderConfig(name="default", version="1.1.0")]
     DEFAULT_CONFIG_NAME = "default"
-    VERSION = _VERSION
 
     def _info(self):
         features = Features(
@@ -65,8 +81,10 @@ class UReaderInstruction(GeneratorBasedBuilder):
         self.shard_num = int(os.getenv("UReaderInstruct_SHARD_NUM", "4"))
 
         return DatasetInfo(
+            version=self.config.version,
+            homepage=_HOMEPAGE,
+            citation=_CITATION,
             features=features,
-            supervised_keys=None,
         )
 
     def _split_generators(self, dl_manager):
@@ -97,7 +115,7 @@ class UReaderInstruction(GeneratorBasedBuilder):
                     # NOTE: conversations의 img 토큰이 서로 다른 chat으로 분리되어 있어서 이걸 하나로 합침.
                     #       모든 conversations의 앞에 img token이 있음을 확인함.
                     conversations = line["conversations"][1:]
-                    conversations[0]["value"] = f"""<image>{conversations[0]['value']}"""
+                    conversations[0]["value"] = f"""<image>{conversations[0]["value"]}"""
                     line["conversations"] = conversations
 
                     json_ls[idx] = line
