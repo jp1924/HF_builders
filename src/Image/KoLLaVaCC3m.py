@@ -11,7 +11,6 @@ from datasets import (
     Split,
     SplitGenerator,
     Value,
-    Version,
 )
 
 
@@ -19,16 +18,23 @@ URLS = {
     "image": "https://huggingface.co/datasets/liuhaotian/LLaVA-CC3M-Pretrain-595K/resolve/main/images.zip",
     "label": "https://huggingface.co/datasets/tabtoyou/KoLLaVA-CC3M-Pretrain-595K/resolve/main/ko_chat.json",
 }
+
+_HOMEPAGE = "https://huggingface.co/datasets/liuhaotian/LLaVA-CC3M-Pretrain-595K"
+
+
+_DATANAME = "KoLLaVaCC3m"
+
+
 _DESCRIPTION = """LLaVA에서 공개한 CC3M의 595K개 Visual Instruction dataset을 한국어로 번역한 데이터셋입니다. 기존 Ko-conceptual-captions에 공개된 한국어 caption을 가져와 데이터셋을 구축했습니다. 번역 결과가 다소 좋지 않아, 추후에 DeepL로 다시 번역할 수 있습니다."""
-_VERSION = "1.0.0"
 
 
-class KoLLaVAInsturct(GeneratorBasedBuilder):
+class KoLLaVaCC3m(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="chat", version=_VERSION, description=_DESCRIPTION),
+        BuilderConfig(name="SFT", version="1.0.0", description=_DESCRIPTION),
     ]
 
-    DEFAULT_CONFIG_NAME = "chat"
+    DEFAULT_CONFIG_NAME = "SFT"
+    DEFAULT_WRITER_BATCH_SIZE = 1000
 
     def _info(self):
         features = Features(
@@ -39,8 +45,10 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
             }
         )
         return DatasetInfo(
+            description=self.config.description,
+            version=self.config.version,
             features=features,
-            version=Version(_VERSION),
+            homepage=_HOMEPAGE,
         )
 
     def _split_generators(self, dl_manager):
