@@ -22,6 +22,17 @@ from img2dataset.resizer import Resizer
 from PIL import Image as PIL_Image
 
 
+_LICENSE = "The COYO dataset of Kakao Brain is licensed under CC-BY-4.0 License. The full license can be found in the LICENSE.cc-by-4.0 file. The dataset includes “Image URL” and “Text” collected from various sites by analyzing Common Crawl data, an open data web crawling project. The collected data (images and text) is subject to the license to which each content belongs."
+_CITATION = """@misc{kakaobrain2022coyo-700m,
+  title         = {COYO-700M: Image-Text Pair Dataset},
+  author        = {Byeon, Minwoo and Park, Beomhee and Kim, Haecheon and Lee, Sungjun and Baek, Woonhyuk and Kim, Saehoon},
+  year          = {2022},
+  howpublished  = {\\url{https://github.com/kakaobrain/coyo-dataset}},
+}"""
+_HOMEPAGE = "https://huggingface.co/datasets/kakaobrain/coyo-700m"
+_DESCRIPTION = """COYO-700M is a large-scale dataset that contains 747M image-text pairs as well as many other meta-attributes to increase the usability to train various models. Our dataset follows a similar strategy to previous vision-and-language datasets, collecting many informative pairs of alt-text and its associated image in HTML documents. We expect COYO to be used to train popular large-scale foundation models complementary to other similar datasets."""
+
+
 URLS = {
     "part-00000-17da4908-939c-46e5-91d0-15f256041956-c000": "https://huggingface.co/datasets/kakaobrain/coyo-700m/resolve/main/data/part-00000-17da4908-939c-46e5-91d0-15f256041956-c000.snappy.parquet?download=true",
     "part-00001-17da4908-939c-46e5-91d0-15f256041956-c000": "https://huggingface.co/datasets/kakaobrain/coyo-700m/resolve/main/data/part-00001-17da4908-939c-46e5-91d0-15f256041956-c000.snappy.parquet?download=true",
@@ -75,20 +86,8 @@ URLS = {
 }
 
 
-_HOMEPAGE = "https://huggingface.co/datasets/kakaobrain/coyo-700m"
-_LICENSE = "The COYO dataset of Kakao Brain is licensed under CC-BY-4.0 License. The full license can be found in the LICENSE.cc-by-4.0 file. The dataset includes “Image URL” and “Text” collected from various sites by analyzing Common Crawl data, an open data web crawling project. The collected data (images and text) is subject to the license to which each content belongs."
-_CITATION = """@misc{kakaobrain2022coyo-700m,
-  title         = {COYO-700M: Image-Text Pair Dataset},
-  author        = {Byeon, Minwoo and Park, Beomhee and Kim, Haecheon and Lee, Sungjun and Baek, Woonhyuk and Kim, Saehoon},
-  year          = {2022},
-  howpublished  = {\\url{https://github.com/kakaobrain/coyo-dataset}},
-}"""
-_DESCRIPTION = """COYO-700M is a large-scale dataset that contains 747M image-text pairs as well as many other meta-attributes to increase the usability to train various models. Our dataset follows a similar strategy to previous vision-and-language datasets, collecting many informative pairs of alt-text and its associated image in HTML documents. We expect COYO to be used to train popular large-scale foundation models complementary to other similar datasets."""
-_VERSION = Version("1.0.0")
-
-
 class Coyo700m(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
+    BUILDER_CONFIGS = [BuilderConfig(name="default", version="1.0.0", description="COYO-700M dataset" + _DESCRIPTION)]
     DEFAULT_CONFIG_NAME = "default"
 
     def _info(self):
@@ -128,12 +127,12 @@ class Coyo700m(GeneratorBasedBuilder):
         self.batch_size = os.getenv("COYO_BATCH_SIZE", 1000)
 
         return DatasetInfo(
-            description=_DESCRIPTION,
+            description=self.config.description,
+            version=self.config.version,
             features=features,
             homepage=_HOMEPAGE,
             license=_LICENSE,
             citation=_CITATION,
-            version=_VERSION,
         )
 
     def _split_generators(self, dl_manager):

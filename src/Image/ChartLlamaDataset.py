@@ -13,7 +13,6 @@ from datasets import (
     Split,
     SplitGenerator,
     Value,
-    Version,
 )
 from natsort import natsorted
 
@@ -22,9 +21,6 @@ from transformers import set_seed
 
 set_seed(42)
 
-
-_DATANAME = "ChartLlamaDataset"
-HOMEPAGE = "https://github.com/tingxueronghua/ChartLlama-code"
 
 CITATION = """\
 @misc{han2023chartllama,
@@ -36,17 +32,8 @@ CITATION = """\
       primaryClass={cs.CV}
 }
 """
-
-URLS = {
-    "box_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/box_chart_100examples_simplified_qa.json",
-    "candlestick_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/candlestick_chart_100examples_simplified_qa.json",
-    "funnel_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/funnel_chart_100examples_simplified_qa.json",
-    "gantt_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/gantt_chart_100examples_simplified_qa.json",
-    "heatmap_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/heatmap_chart_100examples_simplified_qa.json",
-    "ours": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/ours.zip",
-    "polar_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/polar_chart_100examples_simplified_qa.json",
-    "scatter_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/scatter_chart_100examples_simplified_qa.json",
-}
+HOMEPAGE = "https://github.com/tingxueronghua/ChartLlama-code"
+_DATANAME = "ChartLlamaDataset"
 DESCRIPTION = """"# 데이터 구조
 {
     "id": "ours_simplified_qa_37_0",
@@ -84,6 +71,18 @@ DESCRIPTION = """"# 데이터 구조
 와 같이 구성되어 있음.
 그 외의 라벨들은 전부 json으로 되어 있고
 """
+
+
+URLS = {
+    "box_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/box_chart_100examples_simplified_qa.json",
+    "candlestick_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/candlestick_chart_100examples_simplified_qa.json",
+    "funnel_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/funnel_chart_100examples_simplified_qa.json",
+    "gantt_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/gantt_chart_100examples_simplified_qa.json",
+    "heatmap_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/heatmap_chart_100examples_simplified_qa.json",
+    "ours": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/ours.zip",
+    "polar_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/polar_chart_100examples_simplified_qa.json",
+    "scatter_chart": "https://huggingface.co/datasets/listen2you002/ChartLlama-Dataset/resolve/main/scatter_chart_100examples_simplified_qa.json",
+}
 
 
 def convert_mm_content(content: str, img_token: str):
@@ -133,16 +132,18 @@ class ChartLlamaDataset(GeneratorBasedBuilder):
     DEFAULT_CONFIG_NAME = "SINGLE-SFT"
 
     def _info(self):
-        features = {
-            "id": Value("string"),
-            "image": Image(),
-            "conversations": [{"role": Value("string"), "content": Value("string")}],
-        }
+        features = Features(
+            {
+                "id": Value("string"),
+                "image": Image(),
+                "conversations": [{"role": Value("string"), "content": Value("string")}],
+            }
+        )
 
         return DatasetInfo(
-            features=Features(features),
-            version=Version(self.config.version),
             description=self.config.description,
+            version=self.config.version,
+            features=features,
             homepage=HOMEPAGE,
             citation=CITATION,
         )

@@ -22,6 +22,12 @@ from img2dataset.resizer import Resizer
 from PIL import Image as PIL_Image
 
 
+_HOMEPAGE = "https://huggingface.co/datasets/QuoQA-NLP/KoCC12M"
+
+
+_DATANAME = "KoCC12M"
+
+
 _DESCRIPTION = """CC12M of flax-community/conceptual-captions-12 translated from English to Korean."""
 
 _URLs = {
@@ -38,7 +44,8 @@ _URLs = {
 
 
 class KoCC12M(GeneratorBasedBuilder):
-    VERSION = Version("1.0.0")
+    BUILDER_CONFIGS = [BuilderConfig(name="Caption", version="1.0.0", description=_DESCRIPTION)]
+    DEFAULT_CONFIG_NAME = "Caption"
 
     def _info(self):
         features = Features(
@@ -65,10 +72,10 @@ class KoCC12M(GeneratorBasedBuilder):
         self.batch_size = os.getenv("CC12_BATCH_SIZE", 100)
 
         return DatasetInfo(
+            description=self.config.description,
+            version=self.config.version,
             features=features,
-            supervised_keys=None,
-            citation=None,
-            description=_DESCRIPTION,
+            homepage=_HOMEPAGE,
         )
 
     def _split_generators(self, dl_manager):

@@ -17,7 +17,6 @@ from datasets import (
     Split,
     SplitGenerator,
     Value,
-    Version,
     concatenate_datasets,
 )
 from datasets.config import DEFAULT_MAX_BATCH_SIZE
@@ -43,8 +42,6 @@ TRAIN_LABEL_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/mai
 VALID_IMG_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/val_imgs.tar.gz"
 VALID_LABEL_URL = "https://huggingface.co/datasets/mPLUG/DocStruct4M/resolve/main/val.jsonl"
 
-
-_HOMEPAGE = "https://huggingface.co/datasets/mPLUG/M-Paper"
 _LICENSE = "Apache License 2.0"
 _CITATION = """@article{hu2023paperowl,
   title={mplug-paperowl: Scientific diagram analysis with the multimodal large language model},
@@ -52,14 +49,22 @@ _CITATION = """@article{hu2023paperowl,
   journal={arXiv preprint arXiv:2311.18248},
   year={2023}
 }"""
+
+_HOMEPAGE = "https://huggingface.co/datasets/mPLUG/M-Paper"
+
+
 _DESCRIPTION = """M-Paper is a Scientific Diagram Analysis dataset based on 48k high-quality arxiv papers (2021~2023) on Machine Learning. M-Paper contains 447k diagram images and supports 3 tasks: Diagram Captioning, Diagram Analysis and Outline Recommendation."""
-_VERSION = Version("1.0.0")
 
 
 class DocStruct4M(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION)]
+    BUILDER_CONFIGS = [
+        BuilderConfig(
+            name="default",
+            version="1.0.0",
+            description=_DESCRIPTION,
+        )
+    ]
     DEFAULT_CONFIG_NAME = "default"
-    VERSION = _VERSION
 
     def _info(self):
         self.features = Features(
@@ -79,12 +84,12 @@ class DocStruct4M(GeneratorBasedBuilder):
         self.shard_num = int(os.getenv("DocStruct4M_SHARD_NUM", "5"))
 
         return DatasetInfo(
-            description=_DESCRIPTION,
+            description=self.config.description,
+            version=self.config.version,
             features=self.features,
             homepage=_HOMEPAGE,
             license=_LICENSE,
             citation=_CITATION,
-            version=_VERSION,
         )
 
     def _split_generators(self, dl_manager):

@@ -24,13 +24,15 @@ from langdetect import detect_langs
 from openai import OpenAI
 
 
-client = OpenAI()
-
-_VERSION = Version("1.0.0")
 GPT_VERSION = "gpt-4o-mini-2024-07-18"
 
-_DESCRIPTION = f"{GPT_VERSION}를 사용해 lmms-lab/LLaVA-ReCap-118K를 한국어로 번역한 데이터"
+_HOMEPAGE = "https://huggingface.co/datasets/lmms-lab/LLaVA-ReCap-118K"
+
+
 _DATANAME = "KoLLaVAReCap118K"
+
+
+_DESCRIPTION = f"{GPT_VERSION}를 사용해 lmms-lab/LLaVA-ReCap-118K를 한국어로 번역한 데이터"
 
 # copied from: https://community.openai.com/t/i-need-your-help-with-prompt/860497/7
 SYSTEM = """You are an English Translator, specialized in translating sentence from English into korea. Your main goals are to ensure grammatically correct translations and deliver text that feels natural and human-oriented. 
@@ -43,6 +45,8 @@ Instructions:
 5. If there are cultural references or idioms, adapt them to be understandable and relevant in the korea.
 6. Keep the formatting and structure of the original text intact unless specified otherwise.
 7. Review the translation for any errors or awkward phrasing before finalizing."""
+
+client = OpenAI()
 
 
 def num_tokens_from_messages(messages, model=GPT_VERSION):
@@ -92,7 +96,7 @@ def num_tokens_from_messages(messages, model=GPT_VERSION):
 
 class KoLLaVAReCap118K(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="chat", version=_VERSION, description=_DESCRIPTION),
+        BuilderConfig(name="chat", version="1.0.0", description=_DESCRIPTION),
     ]
     DEFAULT_CONFIG_NAME = "chat"
 
@@ -118,9 +122,10 @@ class KoLLaVAReCap118K(GeneratorBasedBuilder):
         self.filter_max_len = int(os.getenv("FILTER_MAX_LEN", "1000"))
 
         return DatasetInfo(
+            description=self.config.description,
+            version=self.config.version,
             features=features,
-            version=_VERSION,
-            description=_DESCRIPTION,
+            homepage=_HOMEPAGE,
         )
 
     def _split_generators(self, dl_manager) -> List[SplitGenerator]:  # type: ignore
@@ -250,7 +255,7 @@ class KoLLaVAReCap118K(GeneratorBasedBuilder):
 
         finish_shard_ls = list()
         for shard_idx in range(self.shard_num):
-            dir_name = f"[{gpt_version}]{_DATANAME}-{self.shard_num}/{shard_idx+1:0{digits}d}"
+            dir_name = f"[{gpt_version}]{_DATANAME}-{self.shard_num}/{shard_idx + 1:0{digits}d}"
             cache_file_name = cache_path.joinpath(dir_name)
 
             if cache_file_name.exists():

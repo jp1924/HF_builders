@@ -22,6 +22,18 @@ from natsort import natsorted
 from tqdm import tqdm
 
 
+DATASET_KEY = "71357"
+DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
+_HOMEPAGE = "https://github.com/tabtoyou/KoLLaVA"
+
+
+_DATANAME = "KoLLaVAInsturct"
+DATASET_SIZE = 11.55  # GB
+
+
+_DESCRIPTION = """LLaVA-v1.5의 Instruction-following Data에서 필요한 데이터를 필터링하고, 한국어로 번역한 데이터셋입니다. (feat. DeepL)"""
+
+
 URLS = {
     "label": "https://huggingface.co/datasets/tabtoyou/KoLLaVA-v1.5-Instruct-581k/resolve/main/kollava_v1_5_mix581k.json",
     "VisualGenome_1": "https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip",
@@ -30,18 +42,10 @@ URLS = {
     "coco_image": "http://images.cocodataset.org/zips/train2017.zip",
 }
 
-_DESCRIPTION = """LLaVA-v1.5의 Instruction-following Data에서 필요한 데이터를 필터링하고, 한국어로 번역한 데이터셋입니다. (feat. DeepL)"""
-_VERSION = "1.0.0"
-
-
-DATASET_KEY = "71357"
-DOWNLOAD_URL = f"https://api.aihub.or.kr/down/{DATASET_KEY}.do"
-DATASET_SIZE = 11.55
-
 
 class KoLLaVAInsturct(GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
-        BuilderConfig(name="chat", version=_VERSION, description=_DESCRIPTION),
+        BuilderConfig(name="chat", version="1.0.0", description=_DESCRIPTION),
     ]
 
     DEFAULT_CONFIG_NAME = "chat"
@@ -55,8 +59,10 @@ class KoLLaVAInsturct(GeneratorBasedBuilder):
             }
         )
         return DatasetInfo(
+            description=self.config.description,
+            version=self.config.version,
             features=features,
-            version=Version(_VERSION),
+            homepage=_HOMEPAGE,
         )
 
     def aihub_downloader(self, destination_path: Path) -> None:

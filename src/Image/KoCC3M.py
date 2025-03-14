@@ -29,14 +29,19 @@ TRAIN_URLs = {
 VALID_URLs = {
     "27c90b30911ef7aa": "https://huggingface.co/datasets/QuoQA-NLP/KoCC3M/resolve/main/data/validation-00000-of-00001-168f14d7fd7256ba.parquet?download=true",
 }
+
+_HOMEPAGE = "https://huggingface.co/datasets/QuoQA-NLP/KoCC3M"
+
+
+_DATANAME = "KoCC3M"
+
+
 _DESCRIPTION = """CC3M of flax-community/conceptual-captions-12 translated from English to Korean."""
-_VERSION = Version("1.0.0")
 
 
 class KoCC3M(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [BuilderConfig(name="default", version=_VERSION, description=_DESCRIPTION)]
+    BUILDER_CONFIGS = [BuilderConfig(name="default", version="1.0.0", description=_DESCRIPTION)]
     DEFAULT_CONFIG_NAME = "default"
-    VERSION = _VERSION
 
     def _info(self):
         features = Features(
@@ -63,10 +68,10 @@ class KoCC3M(GeneratorBasedBuilder):
         self.batch_size = os.getenv("CC3_BATCH_SIZE", 100)
 
         return DatasetInfo(
+            description=self.config.description,
+            version=self.config.version,
             features=features,
-            supervised_keys=None,
-            citation=None,
-            description=_DESCRIPTION,
+            homepage=_HOMEPAGE,
         )
 
     def _split_generators(self, dl_manager):
