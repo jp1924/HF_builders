@@ -737,9 +737,10 @@ class PatternedUtteranceWithNumber(GeneratorBasedBuilder):
             src_ls = list()
             for src_path in src_path_ls:
                 src_id = src_path.stem.split(".")[0]
-                if lbl_id != src_id.replace("TS", "TL"):
+                if lbl_id != src_id.replace("TS", "TL").replace("VS", "VL"):
                     continue
                 src_ls.append(src_path)
+
             if not src_ls:
                 continue
             src_lbl_map[lbl_id] = (lbl_path, src_ls)
@@ -807,7 +808,7 @@ class PatternedUtteranceWithNumber(GeneratorBasedBuilder):
                     }
 
     def _original_generate_examples(self, file_ls: List[Path], split: str):
-        src_path_ls = filter(lambda path: "원천데이터" in str(path), file_ls)
+        src_path_ls = filter(lambda path: all(x in str(path) for x in ["원천데이터", "음성"]), file_ls)
         src_path_ls = natsorted(src_path_ls, key=lambda src_path: src_path.stem)
 
         lbl_path_ls = filter(lambda path: "라벨링데이터" in str(path), file_ls)
@@ -819,7 +820,7 @@ class PatternedUtteranceWithNumber(GeneratorBasedBuilder):
             src_ls = list()
             for src_path in src_path_ls:
                 src_id = src_path.stem.split(".")[0]
-                if lbl_id != src_id.replace("TS", "TL"):
+                if lbl_id != src_id.replace("TS", "TL").replace("VS", "VL"):
                     continue
                 src_ls.append(src_path)
             if not src_ls:
