@@ -21,40 +21,39 @@ from img2dataset.downloader import download_image_with_retry
 from img2dataset.resizer import Resizer
 from PIL import Image as PIL_Image
 
-
 URLS = {
-    "part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00001-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00001-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00002-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00002-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00003-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00003-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00004-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00004-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00005-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00005-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00006-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00006-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00007-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00007-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00008-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00008-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00009-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00009-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00010-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00010-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00011-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00011-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00012-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00012-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00013-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00013-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00014-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00014-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00015-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00015-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00016-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00016-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00017-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00017-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00018-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00018-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00019-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00019-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00020-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00020-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00021-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00021-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00022-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00022-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00023-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00023-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00024-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00024-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00025-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00025-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00026-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00026-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00027-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00027-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00028-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00028-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00029-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00029-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00030-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00030-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
-    "part-00031-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://the-eye.eu/public/AI/cah/laion400m-met-release/laion400m-meta/part-00031-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00001-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00001-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00002-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00002-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00003-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00003-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00004-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00004-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00005-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00005-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00006-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00006-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00007-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00007-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00008-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00008-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00009-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00009-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00010-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00010-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00011-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00011-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00012-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00012-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00013-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00013-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00014-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00014-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00015-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00015-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00016-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00016-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00017-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00017-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00018-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00018-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00019-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00019-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00020-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00020-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00021-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00021-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00022-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00022-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00023-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00023-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00024-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00024-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00025-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00025-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00026-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00026-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00027-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00027-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00028-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00028-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00029-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00029-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00030-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00030-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
+    "part-00031-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "https://hub.oxen.ai/api/repos/ox/Laion-400-Million/file/main/part-00031-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet",
 }
 
 _HOMEPAGE = "https://laion.ai/blog/laion-400-open-dataset/"
@@ -64,7 +63,9 @@ _DESCRIPTION = """Multi-modal language-vision models trained on hundreds of mill
 
 
 class Laion400m(GeneratorBasedBuilder):
-    BUILDER_CONFIGS = [BuilderConfig(name="default", version="1.0.0", description=_DESCRIPTION)]
+    BUILDER_CONFIGS = [
+        BuilderConfig(name="default", version="1.0.0", description=_DESCRIPTION)
+    ]
     DEFAULT_CONFIG_NAME = "default"
 
     def _info(self):
@@ -90,10 +91,10 @@ class Laion400m(GeneratorBasedBuilder):
             resize_only_if_bigger=False,
         )
 
-        self.thread_num = os.getenv("LAION_THREAD_NUM", 15)
+        self.thread_num = os.getenv("LAION_THREAD_NUM", 20)
         self.num_proc = os.getenv("LAION_NUM_PROC", 20)
         self.batched = os.getenv("LAION_BATCHED", True)
-        self.batch_size = os.getenv("LAION_BATCH_SIZE", 1000)
+        self.batch_size = os.getenv("LAION_BATCH_SIZE", 40)
 
         return DatasetInfo(
             description=self.config.description,
@@ -105,7 +106,11 @@ class Laion400m(GeneratorBasedBuilder):
         )
 
     def _split_generators(self, dl_manager):
-        download_file = dl_manager.download_and_extract(URLS)
+        # download_file = dl_manager.download(URLS)
+
+        download_file = {
+            "part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000": "/home/jsb193/part-00000-5b54c5d5-bbcf-484d-a2ce-0d6f73df1a36-c000.snappy.parquet"
+        }
 
         return [
             SplitGenerator(
@@ -123,7 +128,9 @@ class Laion400m(GeneratorBasedBuilder):
             dataset = load_dataset("parquet", data_files=parquet_path, split="train")
 
             parquet_path = Path(parquet_path)
-            cache_file_path = parquet_path.parent.joinpath("Laion400m_cache_file", f"Laion400m-{idx}_cache_file.arrow")
+            cache_file_path = parquet_path.parent.joinpath(
+                "Laion400m_cache_file", f"Laion400m-{idx}_cache_file.arrow"
+            )
 
             if not cache_file_path.parent.exists():
                 print(f"mkdir Laion400m_cache_file at {cache_file_path.parent}")
@@ -134,7 +141,7 @@ class Laion400m(GeneratorBasedBuilder):
                 num_proc=self.num_proc,
                 batched=self.batched,
                 batch_size=self.batch_size,
-                load_from_cache_file=True,
+                load_from_cache_file=False,
                 desc=f"Laion400m-{idx}",
                 cache_file_name=str(cache_file_path),
                 remove_columns=dataset.column_names,
@@ -173,24 +180,61 @@ class Laion400m(GeneratorBasedBuilder):
                 semaphore.acquire()
                 yield laion_row
 
-        sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls = (
-            example["SAMPLE_ID"] if isinstance(example["SAMPLE_ID"], list) else [example["SAMPLE_ID"]],
+        (
+            sample_id_ls,
+            url_ls,
+            text_ls,
+            height_ls,
+            width_ls,
+            license_ls,
+            nsfw_ls,
+            similarity_ls,
+        ) = (
+            example["SAMPLE_ID"]
+            if isinstance(example["SAMPLE_ID"], list)
+            else [example["SAMPLE_ID"]],
             example["URL"] if isinstance(example["URL"], list) else [example["URL"]],
             example["TEXT"] if isinstance(example["TEXT"], list) else [example["TEXT"]],
-            example["HEIGHT"] if isinstance(example["HEIGHT"], list) else [example["HEIGHT"]],
-            example["WIDTH"] if isinstance(example["WIDTH"], list) else [example["WIDTH"]],
-            example["LICENSE"] if isinstance(example["LICENSE"], list) else [example["LICENSE"]],
+            example["HEIGHT"]
+            if isinstance(example["HEIGHT"], list)
+            else [example["HEIGHT"]],
+            example["WIDTH"]
+            if isinstance(example["WIDTH"], list)
+            else [example["WIDTH"]],
+            example["LICENSE"]
+            if isinstance(example["LICENSE"], list)
+            else [example["LICENSE"]],
             example["NSFW"] if isinstance(example["NSFW"], list) else [example["NSFW"]],
-            example["similarity"] if isinstance(example["similarity"], list) else [example["similarity"]],
+            example["similarity"]
+            if isinstance(example["similarity"], list)
+            else [example["similarity"]],
         )
 
         semaphore = Semaphore(self.thread_num * 2)
         loader = data_generator()
         finish_data_ls = list()
-        laion_zip = zip(sample_id_ls, url_ls, text_ls, height_ls, width_ls, license_ls, nsfw_ls, similarity_ls)
+        laion_zip = zip(
+            sample_id_ls,
+            url_ls,
+            text_ls,
+            height_ls,
+            width_ls,
+            license_ls,
+            nsfw_ls,
+            similarity_ls,
+        )
         with ThreadPool(self.thread_num) as thread_pool:
             thead_iter = thread_pool.imap_unordered(downloader, loader)
-            for sample_id, img_bytes, text, height, width, license_, nsfw, similarity in thead_iter:
+            for (
+                sample_id,
+                img_bytes,
+                text,
+                height,
+                width,
+                license_,
+                nsfw,
+                similarity,
+            ) in thead_iter:
                 if not img_bytes:
                     continue
 
