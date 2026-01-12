@@ -417,9 +417,6 @@ class KoAgentInstruct(GeneratorBasedBuilder):
         for idx in range(len(dataset)):
             item_id = f"{config_name}-{idx}"
             if item_id in cached_data:
-                cached_data[item_id]["conversations"] = [
-                    {"role": msg["role"], "content": msg["text"]} for msg in cached_data[item_id]["conversations"]
-                ]
                 yield output_idx, cached_data[item_id]
                 output_idx += 1
             else:
