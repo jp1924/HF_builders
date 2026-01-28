@@ -2,7 +2,9 @@ import csv
 import io
 import json
 import os
+import random
 import time
+from collections import defaultdict
 from itertools import zip_longest
 from pathlib import Path
 from typing import Dict, Generator, List
@@ -97,23 +99,14 @@ class KoreaMathWordProblem(GeneratorBasedBuilder):
         cache_dir = Path(dl_manager.download_config.cache_dir, _DATANAME)
 
         # Load all data sources
-        jeti_data = self._load_jenti_data(download_files["JENTI-Train"])
-        tunib_data = self._load_tunib_data(download_files["TUNIB-Train"])
-
-        # Combine all data
-        all_data = jeti_data + tunib_data
-
-        # Split into train and validation
-        total_size = len(all_data)
-        train_size = int(total_size * self.train_ratio)
-
-        train_data, valid_data = all_data[:train_size], all_data[train_size:]
+        train_data_jenti, valid_data_jenti = self._load_jenti_data(download_files["JENTI-Train"])
+        train_data_tunib, valid_data_tunib = self._load_tunib_data(download_files["TUNIB-Train"])
 
         split_generator_ls = [
             SplitGenerator(
                 name=Split.TRAIN,
                 gen_kwargs={
-                    "data_list": train_data,
+                    "data_list": train_data_jenti + train_data_tunib,
                     "split": "train",
                     "cache_dir": cache_dir,
                 },
@@ -121,7 +114,7 @@ class KoreaMathWordProblem(GeneratorBasedBuilder):
             SplitGenerator(
                 name=Split.VALIDATION,
                 gen_kwargs={
-                    "data_list": valid_data,
+                    "data_list": valid_data_jenti + valid_data_tunib,
                     "split": "validation",
                     "cache_dir": cache_dir,
                 },
@@ -146,7 +139,30 @@ class KoreaMathWordProblem(GeneratorBasedBuilder):
                     "equation": item.get("equation", "none"),
                 }
             )
-        return data_list
+        data_by_type = defaultdict(list)
+        for data in data_list:
+            data_by_type[data["type"]].append(data)
+        for type_name in sorted(data_by_type.keys()):
+            items = data_by_type[type_name]
+            print(f"{type_name}: {len(items)}")
+
+        # Stratified split: 각 유형별로 train_ratio만큼 train으로, 나머지는 validation으로
+        train_data = []
+        valid_data = []
+
+        random.seed(42)
+        for type_name in sorted(data_by_type.keys()):
+            type_samples = data_by_type[type_name]
+            random.shuffle(type_samples)
+
+            # 각 유형별로 train_ratio만큼 분할
+            split_idx = int(len(type_samples) * self.train_ratio)
+            train_samples = type_samples[:split_idx]
+            valid_samples = type_samples[split_idx:]
+
+            train_data.extend(train_samples)
+            valid_data.extend(valid_samples)
+        return train_data, valid_data
 
     def _load_tunib_data(self, filepath: str) -> List[Dict]:
         """Load TUNIB format data from CSV"""
@@ -176,7 +192,30 @@ class KoreaMathWordProblem(GeneratorBasedBuilder):
                         "equation": row.get("code", "none"),
                     }
                 )
-        return data_list
+        data_by_type = defaultdict(list)
+        for data in data_list:
+            data_by_type[data["type"]].append(data)
+        for type_name in sorted(data_by_type.keys()):
+            items = data_by_type[type_name]
+            print(f"{type_name}: {len(items)}")
+
+        # Stratified split: 각 유형별로 train_ratio만큼 train으로, 나머지는 validation으로
+        train_data = []
+        valid_data = []
+
+        random.seed(42)
+        for type_name in sorted(data_by_type.keys()):
+            type_samples = data_by_type[type_name]
+            random.shuffle(type_samples)
+
+            # 각 유형별로 train_ratio만큼 분할
+            split_idx = int(len(type_samples) * self.train_ratio)
+            train_samples = type_samples[:split_idx]
+            valid_samples = type_samples[split_idx:]
+
+            train_data.extend(train_samples)
+            valid_data.extend(valid_samples)
+        return train_data, valid_data
 
     def _generate_examples(self, **kwargs) -> Generator:
         if self.config.name == "GRPO":
@@ -187,7 +226,6 @@ class KoreaMathWordProblem(GeneratorBasedBuilder):
                 yield idx, data
 
     def _grpo_generate_examples(self, data_list: List[Dict], split: str, cache_dir: Path) -> Generator:
-        """Generate GRPO format examples (no GPT processing needed)"""
         for idx, data in enumerate(data_list):
             yield {
                 "id": idx,
@@ -201,8 +239,6 @@ class KoreaMathWordProblem(GeneratorBasedBuilder):
             }
 
     def _sft_generate_examples(self, data_list: List[Dict], split: str, cache_dir: Path) -> Generator:
-        """Generate SFT format examples with GPT-generated conversational answers"""
-
         def process_batches(request_chunk_ls: List[List[str]], depth: int = 0, max_depth: int = 5) -> List[Dict]:
             final_results, retry_ls, batch_map = [], [], {}
             if depth == max_depth:
@@ -327,7 +363,6 @@ class KoreaMathWordProblem(GeneratorBasedBuilder):
         data_to_process = [{**data, "id": idx} for idx, data in enumerate(data_list) if idx not in processed_ids]
 
         if len(data_to_process) == 0:
-            print("✓ All data already processed and cached.")
             return
 
         # Prepare batch requests
@@ -342,7 +377,6 @@ class KoreaMathWordProblem(GeneratorBasedBuilder):
                 "body": {
                     "model": self.gpt_version,
                     "messages": [{"role": "user", "content": row["prompt"]}],
-                    "temperature": 0.7,
                 },
             }
             request_ls.append(json.dumps(request_obj))
